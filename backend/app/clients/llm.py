@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import inspect
 import json
 import re
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 import httpx
 
@@ -72,7 +73,32 @@ def anthropic_model_name(settings: Any | None = None) -> str:
     return DEFAULT_CLAUDE_MODEL
 
 
-class OpenAIClient:
+def anthropic_create_kwargs(
+    create_fn: Callable[..., Any],
+    *,
+    model: str,
+    system: str,
+    user: str,
+    temperature: float,
+    max_tokens: int = 8000,
+) -> dict[str, Any]:
+    """Build Messages.create kwargs compatible with both pre-1.0 and 1.0 SDKs.
+
+    Anthropic Python 1.0 removed ``temperature`` from the method signature.
+    """
+    params: dict[str, Any] = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "system": system,
+        "messages": [{"role": "user", "content": user}],
+    }
+    try:
+        names = inspect.signature(create_fn).parameters
+    except (TypeError, ValueError):
+        names = {}
+    if "temperature" in names:
+        params["temperature"] = temperature
+    return params
     def __init__(self) -> None:
         self.settings = get_settings()
         if not self.settings.openai_api_key:
@@ -109,13 +135,14 @@ class AnthropicClient:
         from anthropic import AsyncAnthropic
 
         client = AsyncAnthropic(api_key=self.api_key, timeout=self.settings.llm_timeout_s)
-        response = await client.messages.create(
+        kwargs = anthropic_create_kwargs(
+            client.messages.create,
             model=self.model,
-            max_tokens=8000,
-            temperature=self.settings.llm_temperature,
             system=system,
-            messages=[{"role": "user", "content": user}],
+            user=user,
+            temperature=self.settings.llm_temperature,
         )
+        response = await client.messages.create(**kwargs)
         content = "".join(block.text for block in response.content if getattr(block, "text", None))
         return parse_json_content(content)
 
