@@ -307,6 +307,27 @@ def _upsert_article_row(db: Session, article: Article, valid: bool) -> None:
     db.add(row)
 
 
+def load_articles_by_canonical_urls(db: Session, urls: list[str]) -> list[Article]:
+    canonicals = [canonicalize_url(url) for url in urls if url]
+    if not canonicals:
+        return []
+    rows = (
+        db.query(ArticleRow)
+        .filter(ArticleRow.valid.is_(True), ArticleRow.canonical_url.in_(canonicals))
+        .all()
+    )
+    by_url = {row.canonical_url: article_from_row(row) for row in rows}
+    ordered: list[Article] = []
+    seen: set[str] = set()
+    for url in canonicals:
+        article = by_url.get(url)
+        if article is None or article.id in seen:
+            continue
+        seen.add(article.id)
+        ordered.append(article)
+    return ordered
+
+
 async def fetch_configured_articles(
     candidates: list[ArticleCandidate],
     db: Session,
@@ -315,18 +336,23 @@ async def fetch_configured_articles(
     min_score: float | None = None,
     force: bool = False,
 ) -> list[Article]:
-    """Fetch full text via Bright Data article collectors for CNA / Edge / VIR URLs only."""
+    """Fetch full text via Bright Data article collectors for CNA / Edge / VIR URLs only.
+
+    URLs already in the article store are reused and still returned as live hits.
+    """
     settings = get_settings()
     min_score = settings.min_brightdata_relevance_score if min_score is None else min_score
     client = client or BrightDataClient()
-    existing = {
-        row[0]
-        for row in db.query(ArticleRow.canonical_url).filter(ArticleRow.valid.is_(True)).all()
-        if row[0]
+    existing_rows = {
+        row.canonical_url: row
+        for row in db.query(ArticleRow).filter(ArticleRow.valid.is_(True)).all()
+        if row.canonical_url
     }
 
-    eligible: list[tuple[ArticleCandidate, str]] = []
+    to_scrape: list[tuple[ArticleCandidate, str]] = []
+    reuse_urls: list[str] = []
     seen: set[str] = set()
+    ranked: list[tuple[ArticleCandidate, str]] = []
     for candidate in candidates:
         source_key = source_for_url(candidate.url)
         if not source_key:
@@ -334,23 +360,35 @@ async def fetch_configured_articles(
         canonical = canonicalize_url(candidate.url)
         if canonical in seen:
             continue
-        if not force and canonical in existing:
-            continue
         score = _candidate_relevance(candidate)
         provider = (candidate.raw or {}).get("provider")
         if provider == "gdelt_ngrams" and score is not None and score < min_score:
             continue
         seen.add(canonical)
-        eligible.append((candidate, source_key))
+        ranked.append((candidate, source_key))
 
-    eligible.sort(key=lambda item: _candidate_relevance(item[0]) or 0.0, reverse=True)
-    eligible = eligible[: settings.gdelt_brightdata_max_urls]
+    ranked.sort(key=lambda item: _candidate_relevance(item[0]) or 0.0, reverse=True)
+    ranked = ranked[: settings.gdelt_brightdata_max_urls]
+
+    for candidate, source_key in ranked:
+        canonical = canonicalize_url(candidate.url)
+        if not force and canonical in existing_rows:
+            reuse_urls.append(canonical)
+            continue
+        to_scrape.append((candidate, source_key))
+
     log.info(
-        f"[GDELT] sent_to_brightdata={len(eligible)}",
-        extra={"source": "gdelt", "article_count": len(eligible), "success": True},
+        f"[GDELT] sent_to_brightdata={len(to_scrape)} reused_from_store={len(reuse_urls)}",
+        extra={
+            "source": "gdelt",
+            "article_count": len(to_scrape) + len(reuse_urls),
+            "success": True,
+        },
     )
-    if not eligible:
-        return []
+
+    stored_articles = load_articles_by_canonical_urls(db, reuse_urls)
+    if not to_scrape:
+        return stored_articles
 
     semaphore = asyncio.Semaphore(settings.article_concurrency)
 
@@ -376,7 +414,7 @@ async def fetch_configured_articles(
 
     extracted = [
         item
-        for item in await asyncio.gather(*(fetch_one(c, key) for c, key in eligible))
+        for item in await asyncio.gather(*(fetch_one(c, key) for c, key in to_scrape))
         if item
     ]
     valid_articles: list[Article] = []
@@ -390,9 +428,15 @@ async def fetch_configured_articles(
         db,
         "gdelt",
         "brightdata_extract",
-        f"Bright Data extracted {len(valid_articles)}/{len(eligible)} GDELT-routed articles",
+        f"Bright Data extracted {len(valid_articles)}/{len(to_scrape)} GDELT-routed articles; reused {len(stored_articles)} from store",
     )
-    return valid_articles
+    by_canonical = {canonicalize_url(article.url): article for article in [*stored_articles, *valid_articles]}
+    ordered: list[Article] = []
+    for candidate, _source_key in ranked:
+        article = by_canonical.get(canonicalize_url(candidate.url))
+        if article and article.id not in {item.id for item in ordered}:
+            ordered.append(article)
+    return ordered
 
 
 def load_recent_articles(db: Session, limit: int = 40) -> list[Article]:
