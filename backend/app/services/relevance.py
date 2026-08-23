@@ -85,7 +85,7 @@ def _clip(value: float) -> float:
     return round(max(0.0, min(1.0, value)), 2)
 
 
-def _lead_text(body: str, limit: int = 1800) -> str:
+def _lead_text(body: str, limit: int = 5000) -> str:
     return (body or "")[:limit]
 
 
@@ -253,7 +253,7 @@ def classify_event(intent: QueryIntent, event: Event, articles: dict[str, Articl
             article = articles.get(article_id)
             if article:
                 snippets.append(article.title)
-                snippets.append(_lead_text(article.body, 900))
+                snippets.append(_lead_text(article.body, 2500))
     return classify_text(intent, event.title, "\n".join(snippets))
 
 

@@ -52,11 +52,21 @@ SEA_GEO = {
     "johor": 4.0,
     "johor bahru": 5.0,
     "kuala lumpur": 3.0,
+    "penang": 4.0,
+    "pulau pinang": 4.0,
+    "kulim": 4.5,
+    "kedah": 3.5,
+    "selangor": 3.0,
+    "bayan lepas": 4.5,
+    "cyberjaya": 3.5,
     "bangkok": 3.0,
     "jakarta": 3.0,
     "manila": 3.0,
     "ho chi minh": 3.0,
     "hanoi": 3.0,
+    "bac ninh": 3.5,
+    "hai phong": 3.0,
+    "haiphong": 3.0,
 }
 
 INFRA_ENTITIES = {
@@ -142,11 +152,16 @@ EV_TECH = {
 SEMI_TECH = {
     "semiconductor": 3.0,
     "chip manufacturing": 4.0,
+    "chipmaker": 4.0,
+    "chipmakers": 4.0,
     "wafer": 3.0,
     "foundry": 4.0,
     "osat": 4.0,
     "advanced packaging": 4.0,
     "chip supply chain": 4.5,
+    "intel": 3.2,
+    "infineon": 3.5,
+    "micron": 3.2,
 }
 
 MANUFACTURING_TECH = {
@@ -170,11 +185,21 @@ GEO_COUNTRY = {
     "johor": "Malaysia",
     "johor bahru": "Malaysia",
     "kuala lumpur": "Malaysia",
+    "penang": "Malaysia",
+    "pulau pinang": "Malaysia",
+    "kulim": "Malaysia",
+    "kedah": "Malaysia",
+    "selangor": "Malaysia",
+    "bayan lepas": "Malaysia",
+    "cyberjaya": "Malaysia",
     "bangkok": "Thailand",
     "jakarta": "Indonesia",
     "manila": "Philippines",
     "ho chi minh": "Vietnam",
     "hanoi": "Vietnam",
+    "bac ninh": "Vietnam",
+    "hai phong": "Vietnam",
+    "haiphong": "Vietnam",
     "southeast asia": "Southeast Asia",
     "south east asia": "Southeast Asia",
     "asean": "Southeast Asia",
@@ -243,6 +268,10 @@ def topic_from_intent(intent) -> TopicConfig:
     for entity in intent.entities:
         boost[entity] = 1.5
     geo = dict(SEA_GEO)
+    for term in [*intent.primary_geo_terms, *intent.context_geo_terms]:
+        normalized = normalize_text(term)
+        if normalized:
+            geo.setdefault(normalized, 3.5)
     # Keep GDELT geography SEA-wide for recall; precision is applied after Bright Data.
     return TopicConfig(
         name=intent.domain or "query",

@@ -32,11 +32,17 @@ def candidate_stamps(
     lookback_hours: int = 6,
     max_probes: int = 120,
     after_stamp: str | None = None,
+    stride_minutes: int = 1,
 ) -> list[str]:
-    """Newest-first minute stamps. Missing minutes are expected; callers skip 404s."""
+    """Newest-first stamps. Missing minutes are expected; callers skip 404s.
+
+    stride_minutes>1 spaces probes across the lookback window so discovery is
+    not limited to the most recent consecutive minutes of global ngrams.
+    """
     now = now or datetime.now(timezone.utc)
     end = now - timedelta(minutes=lag_minutes)
     start = end - timedelta(hours=lookback_hours)
+    step = max(int(stride_minutes or 1), 1)
     if after_stamp:
         try:
             after = parse_stamp(after_stamp)
@@ -48,7 +54,7 @@ def candidate_stamps(
     probes = 0
     while cursor >= start and probes < max_probes:
         stamps.append(snapshot_stamp(cursor))
-        cursor -= timedelta(minutes=1)
+        cursor -= timedelta(minutes=step)
         probes += 1
     return stamps
 

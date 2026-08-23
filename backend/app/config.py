@@ -53,8 +53,9 @@ class Settings(BaseSettings):
     gdelt_cache_dir: str = "./data/gdelt"
     gdelt_ngram_lookback_hours: int = 6
     gdelt_ngram_lag_minutes: int = 5
-    gdelt_ngram_max_snapshots: int = 3
-    gdelt_ngram_max_probe_minutes: int = 120
+    gdelt_ngram_max_snapshots: int = 8
+    gdelt_ngram_snapshot_stride_minutes: int = 15
+    gdelt_ngram_max_probe_minutes: int = 48
     gdelt_ngram_english_only: bool = True
     gdelt_ngram_min_relevance_score: float = 8.0
     # Precision is applied after Bright Data on title+body. Keep this at the GDELT

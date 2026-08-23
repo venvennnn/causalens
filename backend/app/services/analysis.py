@@ -524,8 +524,6 @@ async def run_analysis(db: Session, query: str) -> GraphPayload:
                 raw_edges = await extract_causal_edges(events, eligible)
                 edges = finalize_edges(events, raw_edges, eligible)
                 live_extraction = True
-            else:
-                degraded.append("No CORE events survived post-scrape relevance validation.")
         except LLMExtractionError as exc:
             degraded.append(f"LLM extraction failed: {exc.message}")
 
@@ -561,9 +559,6 @@ async def run_analysis(db: Session, query: str) -> GraphPayload:
             core, context = assemble_events(intent, stubs, curated, classified)
             events = core + context
             edges = finalize_edges(events, [], curated)
-            if not core:
-                degraded.append("No CORE events for this query; returning a sparse graph instead of topic drift.")
-            data_mode = "PARTIAL" if events else data_mode
 
     diagnostics = build_diagnostics(intent, classified, events, edges)
     log.info("graph_quality", extra={"source": "graph", "success": True, "query": query})
