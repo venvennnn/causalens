@@ -104,8 +104,8 @@ export default function HomePage() {
       const result = await api.analyze(nextQuery);
       await playStages(result);
       setPayload(result);
-      const alibaba = result.events.find((event) => event.title.toLowerCase().includes("alibaba"));
-      setSelectedId(alibaba?.id || result.events[0]?.id || null);
+      const core = result.events.find((event) => (event.relevance_class || "CORE") === "CORE");
+      setSelectedId(core?.id || result.events[0]?.id || null);
       await loadPipeline();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");
@@ -183,6 +183,27 @@ export default function HomePage() {
           {payload.data_mode === "CACHED" ? "CACHED — " : "DEGRADED — "}
           {payload.degraded_reasons[0]}
         </div>
+      ) : null}
+      {payload?.diagnostics ? (
+        <details className="border-b border-line px-4 py-2 text-[11px] text-mist">
+          <summary className="cursor-pointer uppercase tracking-[0.14em] text-fog">
+            Graph quality · CORE {payload.diagnostics.core_count} · CONTEXT {payload.diagnostics.context_count} ·
+            REJECTED {payload.diagnostics.rejected_count}
+          </summary>
+          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-fog">
+            {`Query: ${payload.diagnostics.query}
+Candidates: ${payload.diagnostics.candidate_count}
+CORE: ${payload.diagnostics.core_count}
+CONTEXT: ${payload.diagnostics.context_count}
+REJECTED: ${payload.diagnostics.rejected_count}
+
+Rejected:
+${(payload.diagnostics.rejected || [])
+  .slice(0, 8)
+  .map((item) => `- ${item.title}\n  reason: ${item.reason}`)
+  .join("\n") || "- (none)"}`}
+          </pre>
+        </details>
       ) : null}
 
       <div className="flex min-h-0 flex-1">

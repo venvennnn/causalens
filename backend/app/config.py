@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     gdelt_brightdata_max_urls: int = 8
     llm_timeout_s: float = 90.0
     llm_temperature: float = 0.0
+    graph_max_core_nodes: int = 12
+    graph_max_context_nodes: int = 6
+    graph_max_context_hops: int = 1
+    graph_context_min_score: float = 0.55
+    relevance_llm_validation: bool = False
 
     @property
     def cors_origin_list(self) -> list[str]:

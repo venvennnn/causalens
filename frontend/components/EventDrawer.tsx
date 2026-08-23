@@ -66,7 +66,9 @@ export function EventDrawer({
     <aside className="flex h-full w-[380px] shrink-0 flex-col border-l border-line bg-panel">
       <div className="flex items-start justify-between border-b border-line px-4 py-3">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.22em] text-gold">Event</div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-gold">
+            {event.relevance_class === "CONTEXT" ? "Context" : "Event"}
+          </div>
           <h2 className="mt-1 text-[15px] font-medium leading-snug text-paper">{event.title}</h2>
           <div className="mt-1 font-mono text-[11px] text-fog">{formatDate(event.event_date)}</div>
         </div>

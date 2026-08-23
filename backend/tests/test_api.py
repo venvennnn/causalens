@@ -100,3 +100,17 @@ def test_debug_gdelt_discovery_skips_brightdata():
             assert body["brightdata"] is False
             assert body["candidates"][0]["title"].startswith("Johor")
             mock_discover.assert_awaited()
+
+
+def test_debug_graph_quality_classifies_without_gdelt():
+    with TestClient(app) as client:
+        response = client.get(
+            "/debug/graph-quality",
+            params={"query": "Semiconductor investment in Malaysia"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["live_pipeline"] is False
+        assert body["intent"]["primary_geographies"] == ["Malaysia"]
+        assert body["diagnostics"]["candidate_count"] >= 1
+        assert "CORE:" in body["text"]

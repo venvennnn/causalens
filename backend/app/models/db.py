@@ -12,6 +12,8 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -57,6 +59,7 @@ class EventRow(Base):
     source_article_ids: Mapped[list] = mapped_column(JSON, default=list)
     confidence: Mapped[float] = mapped_column(Float, default=0.5)
     event_type: Mapped[str] = mapped_column(String, default="MARKET_MOVE")
+    meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class CausalEdgeRow(Base):
@@ -74,6 +77,7 @@ class CausalEdgeRow(Base):
     cross_border: Mapped[bool] = mapped_column(Boolean, default=False)
     source_countries: Mapped[list] = mapped_column(JSON, default=list)
     target_countries: Mapped[list] = mapped_column(JSON, default=list)
+    meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class AnalysisRow(Base):
@@ -86,6 +90,7 @@ class AnalysisRow(Base):
     cached_from: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     degraded_reasons: Mapped[list] = mapped_column(JSON, default=list)
     stats: Mapped[dict] = mapped_column(JSON, default=dict)
+    diagnostics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -170,8 +175,36 @@ def get_session_factory():
     return _SessionLocal
 
 
+def _sqlite_columns(engine, table: str) -> set[str]:
+    with engine.connect() as conn:
+        rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+    return {row[1] for row in rows}
+
+
+def ensure_schema() -> None:
+    """Add columns introduced after the original SQLite schema without wiping saved graphs."""
+    engine = get_engine()
+    if engine.dialect.name != "sqlite":
+        return
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    statements: list[str] = []
+    if "events" in tables and "meta" not in _sqlite_columns(engine, "events"):
+        statements.append("ALTER TABLE events ADD COLUMN meta JSON")
+    if "causal_edges" in tables and "meta" not in _sqlite_columns(engine, "causal_edges"):
+        statements.append("ALTER TABLE causal_edges ADD COLUMN meta JSON")
+    if "analyses" in tables and "diagnostics" not in _sqlite_columns(engine, "analyses"):
+        statements.append("ALTER TABLE analyses ADD COLUMN diagnostics JSON")
+    if not statements:
+        return
+    with engine.begin() as conn:
+        for statement in statements:
+            conn.execute(text(statement))
+
+
 def init_db() -> None:
     Base.metadata.create_all(get_engine())
+    ensure_schema()
 
 
 def get_db():

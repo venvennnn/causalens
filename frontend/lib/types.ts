@@ -27,6 +27,14 @@ export interface EventNodeData {
   source_article_ids: string[];
   confidence: number;
   event_type: string;
+  relevance_class?: "CORE" | "CONTEXT" | null;
+  relevance_score?: number | null;
+}
+
+export interface EdgeEvidence {
+  article_id: string;
+  quote_or_snippet?: string;
+  reason?: string;
 }
 
 export interface CausalEdgeData {
@@ -42,6 +50,8 @@ export interface CausalEdgeData {
   cross_border: boolean;
   source_countries: string[];
   target_countries: string[];
+  evidence?: EdgeEvidence[];
+  explanation?: string | null;
 }
 
 export interface ArticleCard {
@@ -56,6 +66,20 @@ export interface ArticleCard {
   summary?: string | null;
 }
 
+export interface GraphDiagnostics {
+  query: string;
+  intent?: Record<string, unknown>;
+  candidate_count: number;
+  core_count: number;
+  context_count: number;
+  rejected_count: number;
+  core: { id?: string; title: string; score?: number | null }[];
+  context: { id?: string; title: string; score?: number | null }[];
+  rejected: { title: string; url?: string | null; reason: string }[];
+  metrics?: Record<string, number>;
+  warnings?: string[];
+}
+
 export interface GraphPayload {
   analysis_id: string;
   query: string;
@@ -67,6 +91,7 @@ export interface GraphPayload {
   events: EventNodeData[];
   edges: CausalEdgeData[];
   articles: ArticleCard[];
+  diagnostics?: GraphDiagnostics | null;
 }
 
 export interface PipelineSource {
