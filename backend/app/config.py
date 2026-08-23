@@ -3,7 +3,6 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,6 +36,9 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./causalens.db"
     use_cached_demo_on_failure: bool = True
+    frontend_dir: str = ""
+    port: int = 8000
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     article_concurrency: int = 3
     max_articles_per_source: int = 5
@@ -45,11 +47,12 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 90.0
     llm_temperature: float = 0.0
 
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
-
     @property
     def cors_origin_list(self) -> list[str]:
-        return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+        items = [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+        if "*" in items:
+            return ["*"]
+        return items
 
     @property
     def effective_brightdata_transport(self) -> Literal["cli", "http"]:
