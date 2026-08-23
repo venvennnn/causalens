@@ -206,17 +206,44 @@ The production build is **one Docker image**. FastAPI serves the exported Next.j
 
 ### Render (recommended)
 
-1. Push this branch (or merge to `main`).
-2. In [Render](https://dashboard.render.com), **New → Web Service → this GitHub repo**.
-3. Runtime: **Docker**. Branch: `cursor/causalens-sea-mvp-15e9` (or `main` after merge).
-4. Add env vars:
-   - `OPENAI_API_KEY` — live extraction (optional; demo cache still works)
-   - `BRIGHTDATA_API_TOKEN` — live collectors (optional)
-   - `BRIGHTDATA_TRANSPORT=http`
-   - `USE_CACHED_DEMO_ON_FAILURE=true`
-5. Deploy. Open the `*.onrender.com` URL.
+This is **not** a Django app. Do not use `gunicorn your_application.wsgi`.
 
-`render.yaml` in the repo pre-fills those settings if you use **Deploy to Render**.
+**Option A — Docker (preferred)**
+
+On the Render create-service screen, change the runtime/language from Python to **Docker**, then:
+
+| Field | Value |
+| --- | --- |
+| Language | Docker |
+| Branch | `cursor/causalens-sea-mvp-15e9` |
+| Dockerfile path | `Dockerfile` |
+| Docker build context | `.` |
+| Instance type | **Starter** (required) |
+| Build command | leave empty |
+| Start command | leave empty |
+
+**Option B — Python native (the form you are on)**
+
+| Field | Value |
+| --- | --- |
+| Language | Python 3 |
+| Branch | `cursor/causalens-sea-mvp-15e9` |
+| Root directory | leave empty |
+| Build command | `bash bin/render-build.sh` |
+| Start command | `bash bin/render-start.sh` |
+| Instance type | **Starter** (required) |
+
+Environment variables (optional; demo still works without keys):
+
+- `OPENAI_API_KEY`
+- `BRIGHTDATA_API_TOKEN`
+- `BRIGHTDATA_TRANSPORT=http`
+- `USE_CACHED_DEMO_ON_FAILURE=true`
+- `CORS_ORIGINS=*`
+
+Health check path: `/health`
+
+`render.yaml` in the repo pre-fills Docker settings if you use **Deploy to Render**.
 
 ### Railway
 
