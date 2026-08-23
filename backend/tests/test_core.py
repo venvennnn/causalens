@@ -14,6 +14,7 @@ from app.clients.brightdata import as_record_list, extract_json_payload
 from app.clients.llm import (
     AnthropicClient,
     anthropic_api_key,
+    anthropic_create_kwargs,
     anthropic_model_name,
     get_llm_client,
     is_anthropic_key,
@@ -122,6 +123,36 @@ def test_openai_env_claude_key_routes_to_anthropic():
     assert isinstance(client, AnthropicClient)
     assert client.api_key == "sk-ant-api03-test"
     assert client.model == "claude-sonnet-4-20250514"
+
+
+def test_anthropic_create_kwargs_omits_temperature_on_sdk_v1():
+    async def create_v1(*, max_tokens, messages, model, system):
+        return None
+
+    kwargs = anthropic_create_kwargs(
+        create_v1,
+        model="claude-sonnet-4-20250514",
+        system="sys",
+        user="hello",
+        temperature=0.0,
+    )
+    assert "temperature" not in kwargs
+    assert kwargs["model"] == "claude-sonnet-4-20250514"
+    assert kwargs["messages"][0]["content"] == "hello"
+
+
+def test_anthropic_create_kwargs_includes_temperature_on_legacy_sdk():
+    async def create_legacy(*, max_tokens, messages, model, system, temperature=1.0):
+        return None
+
+    kwargs = anthropic_create_kwargs(
+        create_legacy,
+        model="claude-sonnet-4-20250514",
+        system="sys",
+        user="hello",
+        temperature=0.0,
+    )
+    assert kwargs["temperature"] == 0.0
 
 
 def test_validate_article_length():
