@@ -1,0 +1,1 @@
+"""GDELT Web NGrams discovery."""

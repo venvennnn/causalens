@@ -134,6 +134,22 @@ class PipelineEventRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
+class GdeltSnapshotRow(Base):
+    """Processed GDELT Web NGrams snapshot. DOCIDs are unique only within a snapshot."""
+
+    __tablename__ = "gdelt_snapshots"
+
+    snapshot_timestamp: Mapped[str] = mapped_column(String, primary_key=True)
+    downloaded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ngram_rows: Mapped[int] = mapped_column(Integer, default=0)
+    article_count: Mapped[int] = mapped_column(Integer, default=0)
+    candidate_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    topic: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 _engine = None
 _SessionLocal = None
 

@@ -16,7 +16,7 @@ from app.services.dedupe import dedupe_candidates
 from app.services.health import validate_article
 from app.services.pipeline import log_pipeline_event, upsert_pipeline_run
 from app.sources.adapters import canonicalize_url, normalize_article, normalize_discovery
-from app.sources.registry import SOURCE_REGISTRY, get_source
+from app.sources.registry import SOURCE_REGISTRY, get_source, source_for_url
 
 
 def _article_row(article: Article, valid: bool) -> ArticleRow:
@@ -268,6 +268,131 @@ async def ingest_all_sources(db: Session, max_articles: int | None = None) -> di
         "articles_valid": sum(item["articles_valid"] for item in results),
         "results": results,
     }
+
+
+def _candidate_relevance(candidate: ArticleCandidate) -> float | None:
+    raw = candidate.raw or {}
+    score = raw.get("relevance_score")
+    if score is None:
+        return None
+    try:
+        return float(score)
+    except (TypeError, ValueError):
+        return None
+
+
+def _upsert_article_row(db: Session, article: Article, valid: bool) -> None:
+    row = _article_row(article, valid)
+    existing = db.get(ArticleRow, article.id)
+    if existing:
+        for field in (
+            "title",
+            "url",
+            "canonical_url",
+            "source",
+            "country",
+            "language",
+            "published_at",
+            "author",
+            "category",
+            "summary",
+            "body",
+            "image_url",
+            "ingested_at",
+            "raw",
+            "valid",
+        ):
+            setattr(existing, field, getattr(row, field))
+        return
+    db.add(row)
+
+
+async def fetch_configured_articles(
+    candidates: list[ArticleCandidate],
+    db: Session,
+    *,
+    client: BrightDataClient | None = None,
+    min_score: float | None = None,
+    force: bool = False,
+) -> list[Article]:
+    """Fetch full text via Bright Data article collectors for CNA / Edge / VIR URLs only."""
+    settings = get_settings()
+    min_score = settings.min_brightdata_relevance_score if min_score is None else min_score
+    client = client or BrightDataClient()
+    existing = {
+        row[0]
+        for row in db.query(ArticleRow.canonical_url).filter(ArticleRow.valid.is_(True)).all()
+        if row[0]
+    }
+
+    eligible: list[tuple[ArticleCandidate, str]] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        source_key = source_for_url(candidate.url)
+        if not source_key:
+            continue
+        canonical = canonicalize_url(candidate.url)
+        if canonical in seen:
+            continue
+        if not force and canonical in existing:
+            continue
+        score = _candidate_relevance(candidate)
+        provider = (candidate.raw or {}).get("provider")
+        if provider == "gdelt_ngrams" and score is not None and score < min_score:
+            continue
+        seen.add(canonical)
+        eligible.append((candidate, source_key))
+
+    eligible.sort(key=lambda item: _candidate_relevance(item[0]) or 0.0, reverse=True)
+    eligible = eligible[: settings.gdelt_brightdata_max_urls]
+    log.info(
+        f"[GDELT] sent_to_brightdata={len(eligible)}",
+        extra={"source": "gdelt", "article_count": len(eligible), "success": True},
+    )
+    if not eligible:
+        return []
+
+    semaphore = asyncio.Semaphore(settings.article_concurrency)
+
+    async def fetch_one(candidate: ArticleCandidate, source_key: str) -> Article | None:
+        source = get_source(source_key)
+        async with semaphore:
+            try:
+                rows = await client.run_collector(source["article_collector"], candidate.url)
+            except CausaLensError as exc:
+                log.info(
+                    "gdelt_brightdata_extract_failed",
+                    extra={
+                        "source": source_key,
+                        "collector": source["article_collector"],
+                        "url": candidate.url,
+                        "success": False,
+                        "error": type(exc).__name__,
+                    },
+                )
+                return None
+            record = rows[0] if rows else {}
+            return normalize_article(source_key, record, url=candidate.url, candidate=candidate)
+
+    extracted = [
+        item
+        for item in await asyncio.gather(*(fetch_one(c, key) for c, key in eligible))
+        if item
+    ]
+    valid_articles: list[Article] = []
+    for article in extracted:
+        result = validate_article(article)
+        _upsert_article_row(db, article, result.healthy)
+        if result.healthy:
+            valid_articles.append(article)
+    db.flush()
+    log_pipeline_event(
+        db,
+        "gdelt",
+        "brightdata_extract",
+        f"Bright Data extracted {len(valid_articles)}/{len(eligible)} GDELT-routed articles",
+    )
+    return valid_articles
 
 
 def load_recent_articles(db: Session, limit: int = 40) -> list[Article]:

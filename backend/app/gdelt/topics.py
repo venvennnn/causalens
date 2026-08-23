@@ -1,0 +1,259 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+
+
+def normalize_text(value: str) -> str:
+    text = (value or "").lower().replace("\u00a0", " ")
+    text = text.replace("-", " ").replace("_", " ")
+    text = re.sub(r"[^a-z0-9\s]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+AI_INFRA_TECH = {
+    "ai infrastructure": 5.0,
+    "artificial intelligence infrastructure": 5.0,
+    "ai data center": 5.0,
+    "ai data centre": 5.0,
+    "data center": 2.5,
+    "data centre": 2.5,
+    "gpu cluster": 4.0,
+    "gpu infrastructure": 4.0,
+    "gpu data center": 5.0,
+    "gpu data centre": 5.0,
+    "ai cloud": 4.0,
+    "cloud infrastructure": 2.0,
+    "cloud computing": 1.5,
+    "hyperscale data center": 4.0,
+    "hyperscale data centre": 4.0,
+    "ai compute": 4.0,
+    "compute infrastructure": 3.0,
+    "semiconductor": 1.0,
+    "chip manufacturing": 2.0,
+    "server farm": 2.0,
+    "data center investment": 4.0,
+    "data centre investment": 4.0,
+    # Weak standalone tokens: can help qualify with geography, but must not dominate.
+    "nvidia": 1.0,
+    "gpu": 1.0,
+}
+
+SEA_GEO = {
+    "singapore": 3.0,
+    "malaysia": 3.0,
+    "vietnam": 3.0,
+    "indonesia": 3.0,
+    "thailand": 3.0,
+    "philippines": 3.0,
+    "southeast asia": 4.0,
+    "south east asia": 4.0,
+    "asean": 4.0,
+    "johor": 4.0,
+    "johor bahru": 5.0,
+    "kuala lumpur": 3.0,
+    "bangkok": 3.0,
+    "jakarta": 3.0,
+    "manila": 3.0,
+    "ho chi minh": 3.0,
+    "hanoi": 3.0,
+}
+
+INFRA_ENTITIES = {
+    "nvidia": 2.0,
+    "microsoft": 1.5,
+    "google": 1.5,
+    "amazon": 1.0,
+    "aws": 1.5,
+    "oracle": 1.5,
+    "meta": 1.0,
+    "bytedance": 2.0,
+    "alibaba": 1.5,
+    "tencent": 1.5,
+    "ytl": 2.0,
+    "singtel": 2.0,
+    "telekom malaysia": 2.0,
+    "keppel": 2.0,
+    "sinar mas": 1.5,
+    "blackstone": 1.5,
+    "kkr": 1.5,
+    "brookfield": 1.5,
+}
+
+STRONG_TECH_TERMS = {
+    "ai infrastructure",
+    "artificial intelligence infrastructure",
+    "ai data center",
+    "ai data centre",
+    "gpu cluster",
+    "gpu infrastructure",
+    "gpu data center",
+    "gpu data centre",
+    "ai cloud",
+    "hyperscale data center",
+    "hyperscale data centre",
+    "ai compute",
+    "compute infrastructure",
+    "server farm",
+    "data center investment",
+    "data centre investment",
+    "data center",
+    "data centre",
+    "cloud infrastructure",
+}
+
+WEAK_TECH_TERMS = {
+    "cloud computing",
+    "semiconductor",
+    "chip manufacturing",
+    "nvidia",
+    "gpu",
+}
+
+INFRA_CONTEXT_TERMS = {
+    "data center",
+    "data centre",
+    "infrastructure",
+    "compute infrastructure",
+    "gpu cluster",
+    "ai compute",
+    "hyperscale",
+    "cloud infrastructure",
+    "server farm",
+    "investment",
+    "capacity",
+    "construction",
+    "facility",
+}
+
+EV_TECH = {
+    "ev battery": 5.0,
+    "electric vehicle": 3.0,
+    "battery plant": 4.5,
+    "battery factory": 4.5,
+    "nickel": 2.5,
+    "lithium": 2.0,
+    "supply chain": 2.0,
+    "gigafactory": 5.0,
+    "cathode": 3.0,
+    "ev ecosystem": 4.0,
+}
+
+SEMI_TECH = {
+    "semiconductor": 3.0,
+    "chip manufacturing": 4.0,
+    "wafer": 3.0,
+    "foundry": 4.0,
+    "osat": 4.0,
+    "advanced packaging": 4.0,
+    "chip supply chain": 4.5,
+}
+
+MANUFACTURING_TECH = {
+    "manufacturing": 2.5,
+    "factory expansion": 4.0,
+    "fdi": 3.0,
+    "industrial park": 3.5,
+    "production capacity": 3.5,
+    "electronics manufacturing": 4.0,
+    "supply chain": 2.0,
+}
+
+
+GEO_COUNTRY = {
+    "singapore": "Singapore",
+    "malaysia": "Malaysia",
+    "vietnam": "Vietnam",
+    "indonesia": "Indonesia",
+    "thailand": "Thailand",
+    "philippines": "Philippines",
+    "johor": "Malaysia",
+    "johor bahru": "Malaysia",
+    "kuala lumpur": "Malaysia",
+    "bangkok": "Thailand",
+    "jakarta": "Indonesia",
+    "manila": "Philippines",
+    "ho chi minh": "Vietnam",
+    "hanoi": "Vietnam",
+    "southeast asia": "Southeast Asia",
+    "south east asia": "Southeast Asia",
+    "asean": "Southeast Asia",
+}
+
+
+@dataclass
+class TopicConfig:
+    name: str
+    concept_groups: dict[str, dict[str, float]]
+    boost_terms: dict[str, float] = field(default_factory=dict)
+    strong_tech_terms: set[str] = field(default_factory=set)
+    weak_tech_terms: set[str] = field(default_factory=set)
+    infra_context_terms: set[str] = field(default_factory=set)
+    required_groups: tuple[str, ...] = ("technology", "geography")
+
+    def all_phrases(self) -> list[tuple[str, str, float]]:
+        phrases: list[tuple[str, str, float]] = []
+        for group, terms in self.concept_groups.items():
+            for phrase, weight in terms.items():
+                phrases.append((normalize_text(phrase), group, float(weight)))
+        for phrase, weight in self.boost_terms.items():
+            phrases.append((normalize_text(phrase), "entity", float(weight)))
+        phrases.sort(key=lambda item: len(item[0]), reverse=True)
+        return phrases
+
+
+def _topic(
+    name: str,
+    tech: dict[str, float],
+    *,
+    strong: set[str] | None = None,
+    weak: set[str] | None = None,
+) -> TopicConfig:
+    strong = strong or {k for k, v in tech.items() if v >= 2.5 or k in STRONG_TECH_TERMS}
+    weak = weak or {k for k in tech if k in WEAK_TECH_TERMS or tech[k] <= 1.5}
+    return TopicConfig(
+        name=name,
+        concept_groups={"technology": dict(tech), "geography": dict(SEA_GEO)},
+        boost_terms=dict(INFRA_ENTITIES),
+        strong_tech_terms={normalize_text(item) for item in strong},
+        weak_tech_terms={normalize_text(item) for item in weak},
+        infra_context_terms={normalize_text(item) for item in INFRA_CONTEXT_TERMS},
+    )
+
+
+def topic_from_query(query: str) -> TopicConfig:
+    q = normalize_text(query)
+    extra: dict[str, float] = {}
+    if q and q not in {"ai infrastructure in southeast asia"}:
+        extra[q] = 1.0
+        for token in q.split():
+            if len(token) >= 5 and token not in {"about", "after", "around", "their", "there"}:
+                extra.setdefault(token, 0.4)
+
+    if "vietnam" in q and "manufactur" in q:
+        topic = _topic("vietnam_manufacturing", MANUFACTURING_TECH)
+    elif "semiconductor" in q or "chip" in q:
+        topic = _topic(
+            "semiconductor_sea",
+            {**SEMI_TECH, "data center": 1.5, "data centre": 1.5},
+            strong={"chip manufacturing", "foundry", "osat", "advanced packaging", "chip supply chain", "wafer"},
+            weak={"semiconductor", "data center", "data centre"},
+        )
+    elif any(token in q for token in ("ev battery", "battery", "nickel", "electric vehicle", "ev ")):
+        topic = _topic(
+            "ev_battery_sea",
+            EV_TECH,
+            strong={"ev battery", "battery plant", "battery factory", "gigafactory", "ev ecosystem"},
+            weak={"nickel", "lithium", "supply chain"},
+        )
+    elif "johor" in q or "corridor" in q:
+        topic = _topic("johor_corridor", AI_INFRA_TECH)
+    else:
+        topic = _topic("ai_infrastructure_sea", AI_INFRA_TECH)
+
+    if extra:
+        tech = dict(topic.concept_groups["technology"])
+        for phrase, weight in extra.items():
+            tech.setdefault(phrase, weight)
+        topic.concept_groups["technology"] = tech
+    return topic
