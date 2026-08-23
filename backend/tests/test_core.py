@@ -18,6 +18,7 @@ from app.clients.llm import (
     anthropic_model_name,
     get_llm_client,
     is_anthropic_key,
+    resolve_claude_model,
 )
 from app.models.schemas import Article, CausalEdge, Event
 from app.services.dedupe import titles_similar
@@ -105,9 +106,10 @@ def test_openai_env_claude_key_routes_to_anthropic():
         anthropic_api_key="",
     )
     assert anthropic_api_key(settings) == "sk-ant-api03-abc"
-    assert anthropic_model_name(settings) == "claude-sonnet-4-20250514"
+    assert anthropic_model_name(settings) == "claude-sonnet-4-6"
     settings.openai_model = "claude-sonnet-4-20250514"
-    assert anthropic_model_name(settings) == "claude-sonnet-4-20250514"
+    assert anthropic_model_name(settings) == "claude-sonnet-4-6"
+    assert resolve_claude_model("claude-sonnet-4-20250514") == "claude-sonnet-4-6"
 
     fake = SimpleNamespace(
         llm_provider="openai",
@@ -122,7 +124,7 @@ def test_openai_env_claude_key_routes_to_anthropic():
         client = get_llm_client()
     assert isinstance(client, AnthropicClient)
     assert client.api_key == "sk-ant-api03-test"
-    assert client.model == "claude-sonnet-4-20250514"
+    assert client.model == "claude-sonnet-4-6"
 
 
 def test_anthropic_create_kwargs_omits_temperature_on_sdk_v1():
@@ -131,13 +133,13 @@ def test_anthropic_create_kwargs_omits_temperature_on_sdk_v1():
 
     kwargs = anthropic_create_kwargs(
         create_v1,
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         system="sys",
         user="hello",
         temperature=0.0,
     )
     assert "temperature" not in kwargs
-    assert kwargs["model"] == "claude-sonnet-4-20250514"
+    assert kwargs["model"] == "claude-sonnet-4-6"
     assert kwargs["messages"][0]["content"] == "hello"
 
 
@@ -147,7 +149,7 @@ def test_anthropic_create_kwargs_includes_temperature_on_legacy_sdk():
 
     kwargs = anthropic_create_kwargs(
         create_legacy,
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         system="sys",
         user="hello",
         temperature=0.0,

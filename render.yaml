@@ -17,7 +17,7 @@ services:
       - key: LLM_PROVIDER
         value: openai
       - key: OPENAI_MODEL
-        value: claude-sonnet-4-20250514
+        value: claude-sonnet-4-6
       - key: OPENAI_API_KEY
         sync: false
       - key: BRIGHTDATA_API_TOKEN
