@@ -283,6 +283,35 @@ def test_core_first_graph_drops_unrelated_context():
     assert not any("Microsoft" in title for title in titles)
 
 
+def test_html_article_extract_reads_title_and_paragraphs():
+    from app.services.web_extract import extract_article_from_html, should_fetch_candidate
+
+    html = """
+    <html><head><title>Infineon expands Kulim fab | The Star</title></head>
+    <body>
+      <nav>Home Business Markets</nav>
+      <article>
+        <p>Infineon will invest in additional semiconductor manufacturing capacity at its Kulim, Malaysia facility this year.</p>
+        <p>The expansion covers advanced packaging lines and is expected to add engineering jobs across Kedah.</p>
+      </article>
+    </body></html>
+    """
+    page = extract_article_from_html(html)
+    assert "Infineon" in page.title
+    assert "Kulim" in page.body
+    assert "advanced packaging" in page.body
+    assert should_fetch_candidate(
+        "https://www.thestar.com.my/business/infineon-kulim-semiconductor-expansion-123456",
+        page.title,
+        {"provider": "gdelt_ngrams", "is_likely_article": True},
+    )
+    assert not should_fetch_candidate(
+        "https://www.newsnow.co.uk/news/",
+        "Latest News",
+        {"is_aggregator": True},
+    )
+
+
 def test_event_dedup_merges_kulim_headlines():
     events = [
         _event("a", "Infineon expands Kulim fab", "Infineon expands a fab in Kulim.", companies=["Infineon"], source_article_ids=["1"]),

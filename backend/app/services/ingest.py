@@ -15,7 +15,7 @@ from app.models.schemas import Article, ArticleCandidate
 from app.services.dedupe import dedupe_candidates
 from app.services.health import validate_article
 from app.services.pipeline import log_pipeline_event, upsert_pipeline_run
-from app.sources.adapters import canonicalize_url, normalize_article, normalize_discovery
+from app.sources.adapters import article_from_web_extract, canonicalize_url, normalize_article, normalize_discovery
 from app.sources.registry import SOURCE_REGISTRY, get_source, source_for_url
 
 
@@ -437,6 +437,103 @@ async def fetch_configured_articles(
         if article and article.id not in {item.id for item in ordered}:
             ordered.append(article)
     return ordered
+
+
+async def fetch_open_web_articles(
+    candidates: list[ArticleCandidate],
+    db: Session,
+    *,
+    exclude_urls: set[str] | None = None,
+    fetch_html=None,
+) -> list[Article]:
+    """Extract article bodies from GDELT URLs that are not CNA / The Edge / VIR.
+
+    Bright Data collectors stay source-specific. GDELT recall still needs a
+    full-text pass so CORE/CONTEXT classification can run on the real page.
+    """
+    from app.services.web_extract import download_html, extract_article_from_html, should_fetch_candidate
+
+    settings = get_settings()
+    fetch_html = fetch_html or download_html
+    exclude_urls = {canonicalize_url(url) for url in (exclude_urls or set())}
+    min_score = settings.min_brightdata_relevance_score
+
+    ranked: list[ArticleCandidate] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        canonical = canonicalize_url(candidate.url)
+        if not canonical or canonical in seen or canonical in exclude_urls:
+            continue
+        if source_for_url(candidate.url):
+            continue
+        raw = candidate.raw or {}
+        score = _candidate_relevance(candidate)
+        if raw.get("provider") == "gdelt_ngrams" and score is not None and score < min_score:
+            continue
+        if not should_fetch_candidate(candidate.url, candidate.title, raw):
+            continue
+        seen.add(canonical)
+        ranked.append(candidate)
+
+    ranked.sort(key=lambda item: _candidate_relevance(item) or 0.0, reverse=True)
+    ranked = ranked[: settings.gdelt_web_extract_max_urls]
+    if not ranked:
+        return []
+
+    reuse = load_articles_by_canonical_urls(db, [item.url for item in ranked])
+    reused = {canonicalize_url(article.url) for article in reuse}
+    to_fetch = [item for item in ranked if canonicalize_url(item.url) not in reused]
+
+    semaphore = asyncio.Semaphore(settings.article_concurrency)
+
+    async def fetch_one(candidate: ArticleCandidate) -> Article | None:
+        async with semaphore:
+            html = await fetch_html(candidate.url)
+        if not html:
+            return None
+        extracted = extract_article_from_html(html, fallback_title=candidate.title)
+        article = article_from_web_extract(
+            candidate,
+            title=extracted.title or candidate.title,
+            body=extracted.body,
+        )
+        result = validate_article(article)
+        _upsert_article_row(db, article, result.healthy)
+        if not result.healthy:
+            return None
+        return article
+
+    extracted = [
+        item
+        for item in await asyncio.gather(*(fetch_one(candidate) for candidate in to_fetch))
+        if item
+    ]
+    db.flush()
+    log_pipeline_event(
+        db,
+        "gdelt",
+        "web_extract",
+        f"Extracted {len(extracted)}/{len(to_fetch)} off-domain GDELT articles; reused {len(reuse)} from store",
+    )
+    by_canonical = {canonicalize_url(article.url): article for article in [*reuse, *extracted]}
+    ordered: list[Article] = []
+    for candidate in ranked:
+        article = by_canonical.get(canonicalize_url(candidate.url))
+        if article and article.id not in {item.id for item in ordered}:
+            ordered.append(article)
+    return ordered
+
+
+async def fetch_gdelt_articles(
+    candidates: list[ArticleCandidate],
+    db: Session,
+    *,
+    client: BrightDataClient | None = None,
+) -> list[Article]:
+    configured = await fetch_configured_articles(candidates, db, client=client)
+    seen = {canonicalize_url(article.url) for article in configured}
+    extra = await fetch_open_web_articles(candidates, db, exclude_urls=seen)
+    return [*configured, *extra]
 
 
 def load_recent_articles(db: Session, limit: int = 40) -> list[Article]:

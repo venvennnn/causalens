@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     # recall floor so configured-domain candidates are not dropped by a second cutoff.
     min_brightdata_relevance_score: float = 8.0
     gdelt_brightdata_max_urls: int = 8
+    gdelt_web_extract_max_urls: int = 10
+    gdelt_web_extract_timeout_s: float = 20.0
     llm_timeout_s: float = 90.0
     llm_temperature: float = 0.0
     graph_max_core_nodes: int = 12

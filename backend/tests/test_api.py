@@ -161,3 +161,51 @@ def test_fetch_reuses_stored_configured_url_without_scraping():
             assert canonicalize_url(result[0].url) == canonicalize_url(url)
         finally:
             db.close()
+
+
+def test_analyze_extracts_off_domain_gdelt_candidates():
+    from datetime import datetime
+
+    from app.models.schemas import Article, ArticleCandidate
+    from app.sources.adapters import article_id_for
+
+    url = "https://www.thestar.com.my/business/infineon-kulim-semiconductor-expansion-123456"
+    article = Article(
+        id=article_id_for(url),
+        title="Infineon invests in new Kulim semiconductor capacity",
+        url=url,
+        source="thestar.com.my",
+        country="Malaysia",
+        body=(
+            "Infineon will invest in additional semiconductor manufacturing capacity "
+            "at its Kulim, Malaysia facility this year. The expansion covers advanced "
+            "packaging and wafer-related operations for automotive and industrial chips."
+        ),
+        ingested_at=datetime.utcnow(),
+    )
+    candidate = ArticleCandidate(
+        id="g-off",
+        title=article.title,
+        url=url,
+        source="thestar.com.my",
+        country="Malaysia",
+        raw={"provider": "gdelt_ngrams", "relevance_score": 16.0, "is_likely_article": True},
+    )
+    with (
+        patch("app.services.analysis.GDELTClient") as mock_gdelt,
+        patch("app.services.analysis.fetch_configured_articles", new_callable=AsyncMock) as mock_bd,
+        patch("app.services.analysis.fetch_open_web_articles", new_callable=AsyncMock) as mock_web,
+    ):
+        mock_gdelt.return_value.search_gdelt = AsyncMock(return_value=[candidate])
+        mock_bd.return_value = []
+        mock_web.return_value = [article]
+        with TestClient(app) as client:
+            response = client.post("/analyze", json={"query": "Semiconductor investment in Malaysia"})
+            assert response.status_code == 200
+            payload = response.json()
+            reasons = " ".join(payload.get("degraded_reasons") or [])
+            assert "none on CNA" not in reasons
+            assert "could not recover usable bodies" not in reasons
+            mock_web.assert_awaited()
+            titles = " ".join(event["title"] for event in payload["events"])
+            assert "Infineon" in titles or payload["diagnostics"]["core_count"] >= 1
