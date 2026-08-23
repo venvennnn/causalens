@@ -1,0 +1,61 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+:root {
+  --background: #07090d;
+  --foreground: #e8edf2;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-void: #07090d;
+  --color-panel: #0d1117;
+  --color-panel-2: #121821;
+  --color-line: #1c2430;
+  --color-paper: #e8edf2;
+  --color-fog: #b4bec9;
+  --color-mist: #7d8a99;
+  --color-gold: #c4a35a;
+  --color-cyan: #4db8d4;
+  --color-ok: #5dbe8a;
+  --color-fail: #d45d5d;
+  --color-ink: #0b0d10;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  background: #07090d;
+  color: #e8edf2;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.01em;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1c2430 #07090d;
+}
+
+.react-flow__attribution {
+  display: none;
+}
+
+.react-flow__edge-text {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
+.react-flow__controls-button {
+  background: #0d1117 !important;
+  border-bottom: 1px solid #1c2430 !important;
+  fill: #b4bec9 !important;
+}
+
+.react-flow__minimap {
+  background: #0d1117 !important;
+}

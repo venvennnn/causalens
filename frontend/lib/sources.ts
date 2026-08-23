@@ -1,0 +1,43 @@
+import type { PipelineSource } from "./types";
+
+export const DEFAULT_SOURCES: PipelineSource[] = [
+  {
+    source: "cna",
+    display_name: "CNA",
+    country: "Singapore",
+    discovery_status: "idle",
+    article_status: "idle",
+    articles_discovered: 5,
+    articles_extracted: 5,
+    validation_failures: 0,
+    collector_id: "c_mt5waa7y28okohy2bb",
+    article_collector_id: "c_mt5xrjlvou8e3hv9h",
+    health: "HEALTHY",
+  },
+  {
+    source: "edge",
+    display_name: "The Edge Malaysia",
+    country: "Malaysia",
+    discovery_status: "idle",
+    article_status: "idle",
+    articles_discovered: 5,
+    articles_extracted: 5,
+    validation_failures: 0,
+    collector_id: "c_mt5x5mxs1yk83lb2ss",
+    article_collector_id: "c_mt5xjcc52lzzkhyte1",
+    health: "HEALTHY",
+  },
+  {
+    source: "vir",
+    display_name: "Vietnam Investment Review",
+    country: "Vietnam",
+    discovery_status: "idle",
+    article_status: "idle",
+    articles_discovered: 5,
+    articles_extracted: 5,
+    validation_failures: 0,
+    collector_id: "c_mt5x1ux81pzkfi3gzf",
+    article_collector_id: "c_mt5xxz1h12rsttjaza",
+    health: "HEALTHY",
+  },
+];
