@@ -221,39 +221,43 @@ def _topic(
     )
 
 
+def topic_from_intent(intent) -> TopicConfig:
+    tech: dict[str, float] = {}
+    for term in intent.required_terms():
+        tech[term] = 4.0
+    for group in intent.required_concept_groups:
+        weight = 4.0 if group.strength == "required" else 3.2
+        for term in group.terms:
+            tech.setdefault(term, weight)
+    for group in intent.supporting_concept_groups:
+        for term in group.terms:
+            tech.setdefault(term, 2.2)
+    # Query remainder can boost recall but must not become a required weak substitute.
+    q = normalize_text(intent.raw_query)
+    if q:
+        tech.setdefault(q, 1.2)
+
+    strong = {normalize_text(term) for term in intent.strong_terms() or intent.required_terms()}
+    weak = {normalize_text(term) for term in intent.weak_context_terms}
+    boost = {term: 1.0 for term in intent.weak_context_terms}
+    for entity in intent.entities:
+        boost[entity] = 1.5
+    geo = dict(SEA_GEO)
+    # Keep GDELT geography SEA-wide for recall; precision is applied after Bright Data.
+    return TopicConfig(
+        name=intent.domain or "query",
+        concept_groups={"technology": tech, "geography": geo},
+        boost_terms={**INFRA_ENTITIES, **boost},
+        strong_tech_terms=strong,
+        weak_tech_terms=weak,
+        infra_context_terms={normalize_text(item) for item in intent.supporting_terms()[:24]},
+    )
+
+
 def topic_from_query(query: str) -> TopicConfig:
+    from app.services.query_intent import parse_query_intent
+
     q = normalize_text(query)
-    extra: dict[str, float] = {}
-    if q and q not in {"ai infrastructure in southeast asia"}:
-        extra[q] = 1.0
-        for token in q.split():
-            if len(token) >= 5 and token not in {"about", "after", "around", "their", "there"}:
-                extra.setdefault(token, 0.4)
-
-    if "vietnam" in q and "manufactur" in q:
-        topic = _topic("vietnam_manufacturing", MANUFACTURING_TECH)
-    elif "semiconductor" in q or "chip" in q:
-        topic = _topic(
-            "semiconductor_sea",
-            {**SEMI_TECH, "data center": 1.5, "data centre": 1.5},
-            strong={"chip manufacturing", "foundry", "osat", "advanced packaging", "chip supply chain", "wafer"},
-            weak={"semiconductor", "data center", "data centre"},
-        )
-    elif any(token in q for token in ("ev battery", "battery", "nickel", "electric vehicle", "ev ")):
-        topic = _topic(
-            "ev_battery_sea",
-            EV_TECH,
-            strong={"ev battery", "battery plant", "battery factory", "gigafactory", "ev ecosystem"},
-            weak={"nickel", "lithium", "supply chain"},
-        )
-    elif "johor" in q or "corridor" in q:
-        topic = _topic("johor_corridor", AI_INFRA_TECH)
-    else:
-        topic = _topic("ai_infrastructure_sea", AI_INFRA_TECH)
-
-    if extra:
-        tech = dict(topic.concept_groups["technology"])
-        for phrase, weight in extra.items():
-            tech.setdefault(phrase, weight)
-        topic.concept_groups["technology"] = tech
-    return topic
+    if q in {"ai infrastructure in southeast asia", ""}:
+        return _topic("ai_infrastructure_sea", AI_INFRA_TECH)
+    return topic_from_intent(parse_query_intent(query))

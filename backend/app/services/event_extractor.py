@@ -21,10 +21,14 @@ Do not summarize articles.
 
 Identify unique REAL-WORLD EVENTS.
 
-Multiple articles may refer to the same event.
-Merge duplicates.
+Merge duplicates more aggressively when they share companies, location,
+event type and a close date window even if headlines differ.
+
+Do not create separate nodes merely because headlines differ.
 
 Only extract events supported by supplied evidence.
+Prefer events that directly match the user query when a query is provided.
+
 
 Examples:
 

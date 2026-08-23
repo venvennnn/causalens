@@ -240,10 +240,8 @@ def score_document(
     breakdown.frequency = round(min(acc.total_match_frequency / 8.0, 2.5), 2)
 
     title_n = normalize_text(title)
-    strong_in_title = _title_has_any(
-        title_n, list(topic.strong_tech_terms) + list(STRONG_TITLE_TECH_SIGNALS)
-    )
-    weak_in_title = _title_has_any(title_n, list(topic.weak_tech_terms) + list(WEAK_TITLE_TECH_SIGNALS))
+    strong_in_title = _title_has_any(title_n, list(topic.strong_tech_terms))
+    weak_in_title = _title_has_any(title_n, list(topic.weak_tech_terms))
     geo_in_title = _title_has_any(title_n, list(acc.geo_terms) + list(topic.concept_groups.get("geography", {})))
     infra_in_title = _title_has_any(title_n, list(topic.infra_context_terms))
     if strong_in_title:

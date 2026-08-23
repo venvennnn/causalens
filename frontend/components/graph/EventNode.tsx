@@ -19,6 +19,7 @@ export type EventNodePayload = {
   dimmed?: boolean;
   active?: boolean;
   predicted?: boolean;
+  relevance_class?: "CORE" | "CONTEXT" | null;
 };
 
 export function EventNode({ data }: NodeProps) {
@@ -27,6 +28,8 @@ export function EventNode({ data }: NodeProps) {
   const meta = countryMeta(country);
   const pct = evidencePct(payload.evidence);
 
+  const isContext = payload.relevance_class === "CONTEXT";
+
   return (
     <div
       className={cn(
@@ -34,6 +37,7 @@ export function EventNode({ data }: NodeProps) {
         payload.active ? "border-gold/80 shadow-[0_0_0_1px_rgba(196,163,90,0.35)]" : "border-line",
         payload.predicted && "border-dashed border-mist/50",
         payload.dimmed && "opacity-25",
+        isContext && !payload.dimmed && "opacity-70",
       )}
     >
       <Handle type="target" position={Position.Left} className="!h-1.5 !w-1.5 !border-line !bg-gold" />
@@ -42,7 +46,9 @@ export function EventNode({ data }: NodeProps) {
           <span>{meta.flag}</span>
           <span style={{ color: meta.color }}>{country}</span>
         </div>
-        <span className="font-mono text-[10px] text-fog">{formatShortDate(payload.event_date)}</span>
+        <span className="font-mono text-[10px] text-fog">
+          {isContext ? "CONTEXT" : "CORE"} · {formatShortDate(payload.event_date)}
+        </span>
       </div>
       <div className="px-2.5 py-2">
         <div className="text-[12.5px] font-medium leading-snug text-paper">{payload.title}</div>

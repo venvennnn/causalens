@@ -15,8 +15,11 @@ from app.services.analysis import (
     run_analysis,
     to_public_payload,
 )
-from app.services.ingest import ingest_all_sources
+from app.services.demo_seed import seed_articles
+from app.services.graph_quality import build_diagnostics, classify_articles, format_diagnostics_text
+from app.services.ingest import ingest_all_sources, load_recent_articles
 from app.services.pipeline import list_pipeline_events, list_pipeline_status, record_healing_event
+from app.services.query_intent import parse_query_intent
 from app.sources.registry import SOURCE_REGISTRY
 
 router = APIRouter()
@@ -146,6 +149,25 @@ async def debug_gdelt_discovery(
         "candidate_count": len(result.ranked),
         "candidates": serialize_ranked(top),
         "brightdata": False,
+    }
+
+
+@router.get("/debug/graph-quality")
+def debug_graph_quality(
+    query: str = Query(default="Semiconductor investment in Malaysia", min_length=3, max_length=240),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Classify stored/seed articles against query intent without calling GDELT or Bright Data."""
+    intent = parse_query_intent(query)
+    articles = load_recent_articles(db, limit=80) or seed_articles()
+    classified = classify_articles(intent, articles)
+    diagnostics = build_diagnostics(intent, classified, [], [])
+    return {
+        "query": query,
+        "intent": intent.to_dict(),
+        "text": format_diagnostics_text(diagnostics),
+        "diagnostics": diagnostics.model_dump(mode="json"),
+        "live_pipeline": False,
     }
 
 

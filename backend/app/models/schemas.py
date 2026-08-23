@@ -38,7 +38,12 @@ RelationType = Literal[
     "TRIGGERS",
     "RESPONDS_TO",
     "AFFECTS",
+    "ENABLES",
+    "CONSTRAINS",
+    "PART_OF",
+    "RELATED_TO",
 ]
+RelevanceClass = Literal["CORE", "CONTEXT"]
 
 EdgeStatus = Literal["observed", "inferred", "predicted"]
 HealthStatus = Literal["HEALTHY", "DEGRADED", "FAILED", "HEALED"]
@@ -101,11 +106,21 @@ class Event(BaseModel):
     source_article_ids: list[str] = Field(default_factory=list)
     confidence: float = 0.5
     event_type: str = "MARKET_MOVE"
+    relevance_class: RelevanceClass | None = None
+    relevance_score: float | None = None
+    relevance_breakdown: dict | None = None
+    relevance_reason: str | None = None
 
     @field_validator("confidence")
     @classmethod
     def clamp_confidence(cls, value: float) -> float:
         return max(0.0, min(1.0, value))
+
+
+class EdgeEvidence(BaseModel):
+    article_id: str
+    quote_or_snippet: str = ""
+    reason: str = ""
 
 
 class CausalEdge(BaseModel):
@@ -121,11 +136,32 @@ class CausalEdge(BaseModel):
     cross_border: bool = False
     source_countries: list[str] = Field(default_factory=list)
     target_countries: list[str] = Field(default_factory=list)
+    evidence: list[EdgeEvidence] = Field(default_factory=list)
+    explanation: str | None = None
 
     @field_validator("confidence", "evidence_score")
     @classmethod
     def clamp_scores(cls, value: float) -> float:
         return max(0.0, min(1.0, value))
+
+    @field_validator("relation", mode="before")
+    @classmethod
+    def coerce_relation(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        label = value.strip().upper().replace(" ", "_")
+        allowed = {
+            "CAUSES",
+            "CONTRIBUTES_TO",
+            "TRIGGERS",
+            "RESPONDS_TO",
+            "AFFECTS",
+            "ENABLES",
+            "CONSTRAINS",
+            "PART_OF",
+            "RELATED_TO",
+        }
+        return label if label in allowed else "RELATED_TO"
 
 
 class ValidationResult(BaseModel):
@@ -158,6 +194,26 @@ class PipelineLogEvent(BaseModel):
     created_at: datetime
 
 
+class RejectedCandidate(BaseModel):
+    title: str
+    url: str | None = None
+    reason: str
+
+
+class GraphDiagnostics(BaseModel):
+    query: str
+    intent: dict = Field(default_factory=dict)
+    candidate_count: int = 0
+    core_count: int = 0
+    context_count: int = 0
+    rejected_count: int = 0
+    core: list[dict] = Field(default_factory=list)
+    context: list[dict] = Field(default_factory=list)
+    rejected: list[RejectedCandidate] = Field(default_factory=list)
+    metrics: dict = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class GraphPayload(BaseModel):
     analysis_id: str
     query: str
@@ -169,6 +225,7 @@ class GraphPayload(BaseModel):
     events: list[Event]
     edges: list[CausalEdge]
     articles: list[Article]
+    diagnostics: GraphDiagnostics | None = None
 
 
 class AnalyzeRequest(BaseModel):

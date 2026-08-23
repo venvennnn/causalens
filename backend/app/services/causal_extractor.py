@@ -11,12 +11,12 @@ from app.exceptions import LLMExtractionError
 from app.logging import log
 from app.models.schemas import Article, CausalEdge, Event
 from app.services.evidence import annotate_cross_border, calculate_evidence_score
+from app.services.relations import normalize_relation_label
 
-CAUSAL_SYSTEM = """You are the causal reasoning engine for CausaLens SEA.
+CAUSAL_SYSTEM = """You are the relation extractor for CausaLens SEA.
 
-Given a set of real-world events and their supporting article evidence,
-identify causal relationships only when the supplied evidence supports
-the relationship.
+Identify relationships between events ONLY when the supplied article evidence
+supports the relationship. Do not invent facts or article IDs.
 
 Allowed relationships:
 
@@ -25,36 +25,51 @@ CONTRIBUTES_TO
 TRIGGERS
 RESPONDS_TO
 AFFECTS
+ENABLES
+CONSTRAINS
+PART_OF
+RELATED_TO
+
+Default to RELATED_TO whenever two events are about the same topic,
+share entities, or are only semantically similar.
+
+Do NOT convert similarity into causality.
+
+CAUSES requires the source text to assert that the source event produced
+the target event, using explicit causal language such as because, due to,
+as a result, led to, driven by, caused, prompted, forced, triggered.
+
+CONTRIBUTES_TO is weaker than CAUSES: the source is described as one
+contributing factor, not the sole cause.
+
+AFFECTS is for a stated impact that is not clearly causal.
+
+ENABLES / CONSTRAINS / RESPONDS_TO / PART_OF only when the article
+states that mechanism.
+
+Directionality matters. Identify source → relation → target explicitly.
+Do not infer direction from chronology or graph layout.
+Event A happening before Event B is NOT causal proof.
+
+If two events come from different articles and no article links them,
+use RELATED_TO. Never invent a cross-article CAUSES claim.
+
+Temporal ordering may be mentioned as supporting context only.
 
 Return JSON:
 {"edges": [{
   "source_event_id": "...",
   "target_event_id": "...",
-  "relation": "CAUSES",
+  "relation": "RELATED_TO",
   "confidence": 0.0,
-  "reason": "...",
+  "reason": "short evidence-based explanation",
   "supporting_article_ids": ["..."],
   "status": "observed"
 }]}
 
-Rules:
-
-Temporal precedence alone is NOT causality.
-
-Two events occurring close together does NOT imply causation.
-
-Prefer causal edges when:
-
-1. an article explicitly describes causation;
-2. an article describes a clear causal mechanism;
-3. multiple sources independently support the connection;
-4. the target is explicitly described as a response to the source.
-
-"Observed" means directly evidenced.
-"Inferred" means the evidence supports a reasonable mechanism but
-causation is not explicitly stated.
-"Predicted" is only for plausible future effects and must be shown
-separately from observed facts.
+"Observed" means directly evidenced in an article.
+"Inferred" means a reasonable mechanism is described but not explicit.
+"Predicted" is only for plausible future effects.
 
 Never fabricate supporting article IDs.
 Only use event ids and article ids supplied in the request.
@@ -80,6 +95,7 @@ async def extract_causal_edges(events: list[Event], articles: list[Article]) -> 
             "companies": event.companies,
             "industries": event.industries,
             "event_type": event.event_type,
+            "relevance_class": event.relevance_class or "CORE",
             "source_article_ids": event.source_article_ids,
         }
         for event in events
@@ -111,34 +127,43 @@ async def extract_causal_edges(events: list[Event], articles: list[Article]) -> 
             continue
         source_id = str(raw.get("source_event_id") or "")
         target_id = str(raw.get("target_event_id") or "")
-        relation = str(raw.get("relation") or "AFFECTS").upper()
+        relation = normalize_relation_label(str(raw.get("relation") or "RELATED_TO"))
         if source_id not in event_ids or target_id not in event_ids or source_id == target_id:
             continue
         key = (source_id, target_id, relation)
         if key in seen:
             continue
         seen.add(key)
+        source_event = events_by_id[source_id]
+        target_event = events_by_id[target_id]
         supporting = [
             str(item)
             for item in raw.get("supporting_article_ids") or []
             if str(item) in valid_article_ids
         ]
+        shared = set(source_event.source_article_ids) & set(target_event.source_article_ids)
+        if relation != "RELATED_TO":
+            # Causal claims must keep provenance from overlapping evidence, not a union of both events.
+            if shared:
+                supporting = [item for item in supporting if item in shared] or list(shared)[:4]
+            elif not supporting:
+                relation = "RELATED_TO"
         if not supporting:
             supporting = list(
-                dict.fromkeys(
-                    events_by_id[source_id].source_article_ids + events_by_id[target_id].source_article_ids
-                )
+                dict.fromkeys(source_event.source_article_ids + target_event.source_article_ids)
             )[:4]
+            relation = "RELATED_TO"
         try:
             edge = CausalEdge(
                 id=_edge_id(source_id, target_id, relation),
                 source_event_id=source_id,
                 target_event_id=target_id,
                 relation=relation,  # type: ignore[arg-type]
-                confidence=float(raw.get("confidence") or 0.55),
-                reason=str(raw.get("reason") or "").strip() or "Evidence-backed causal link.",
+                confidence=float(raw.get("confidence") or 0.5),
+                reason=str(raw.get("reason") or "").strip() or "Evidence-backed relationship.",
                 supporting_article_ids=supporting,
                 status=str(raw.get("status") or "observed").lower(),  # type: ignore[arg-type]
+                explanation=str(raw.get("reason") or "").strip() or None,
             )
         except ValidationError:
             continue
