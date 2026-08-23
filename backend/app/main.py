@@ -13,6 +13,7 @@ from app.logging import log
 from app.models.db import get_session_factory, init_db
 from app.services.analysis import seed_demo_if_needed
 from app.services.pipeline import ensure_default_pipeline_rows
+from app.static_frontend import mount_frontend
 
 settings = get_settings()
 
@@ -42,15 +43,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+allow_credentials = settings.cors_origin_list != ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(router)
+mount_frontend(app, settings.frontend_dir)
 
 
 @app.exception_handler(CausaLensError)

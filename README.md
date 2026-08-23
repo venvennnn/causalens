@@ -198,6 +198,80 @@ npm run dev
 
 Open http://localhost:3000
 
+## Deploy online
+
+The production build is **one Docker image**. FastAPI serves the exported Next.js UI on the same origin, so a judge only needs one URL.
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/venvennnn/causalens)
+
+### Render (recommended)
+
+This is **not** a Django app. Do not use `gunicorn your_application.wsgi`.
+
+**Option A — Docker (preferred)**
+
+On the Render create-service screen, change the runtime/language from Python to **Docker**, then:
+
+| Field | Value |
+| --- | --- |
+| Language | Docker |
+| Branch | `cursor/causalens-sea-mvp-15e9` |
+| Dockerfile path | `Dockerfile` |
+| Docker build context | `.` |
+| Instance type | **Starter** (required) |
+| Build command | leave empty |
+| Start command | leave empty |
+
+**Option B — Python native (the form you are on)**
+
+| Field | Value |
+| --- | --- |
+| Language | Python 3 |
+| Branch | `cursor/causalens-sea-mvp-15e9` |
+| Root directory | leave empty |
+| Build command | `bash bin/render-build.sh` |
+| Start command | `bash bin/render-start.sh` |
+| Instance type | **Starter** (required) |
+
+Environment variables (optional; demo still works without keys):
+
+- `OPENAI_API_KEY`
+- `BRIGHTDATA_API_TOKEN`
+- `BRIGHTDATA_TRANSPORT=http`
+- `USE_CACHED_DEMO_ON_FAILURE=true`
+- `CORS_ORIGINS=*`
+
+Health check path: `/health`
+
+`render.yaml` in the repo pre-fills Docker settings if you use **Deploy to Render**.
+
+### Railway
+
+New project → Deploy from GitHub → this repo. Railway reads `railway.toml` and the root `Dockerfile`. Set the same env vars. Open the generated `*.up.railway.app` URL.
+
+### Fly.io
+
+```bash
+fly launch --copy-config --yes
+fly secrets set OPENAI_API_KEY=sk-... BRIGHTDATA_API_TOKEN=...
+fly deploy
+```
+
+### Docker (any VPS / Cloud Run)
+
+```bash
+docker build -t causalens-sea .
+docker run --rm -p 8000:8000 \
+  -e OPENAI_API_KEY=sk-... \
+  -e BRIGHTDATA_API_TOKEN=... \
+  -e BRIGHTDATA_TRANSPORT=http \
+  causalens-sea
+```
+
+Then http://localhost:8000 — or put a TLS proxy in front.
+
+Without LLM or Bright Data keys the site still loads the cached SEA graph and labels it **CACHED**.
+
 ## Demo flow
 
 Recommended query: **AI infrastructure in Southeast Asia**
