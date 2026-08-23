@@ -425,22 +425,39 @@ async def run_analysis(db: Session, query: str) -> GraphPayload:
                 db,
                 "gdelt",
                 "brightdata_ok",
-                f"Fetched {len(fetched)} configured-domain articles from GDELT candidates",
+                f"Using {len(fetched)} CNA/Edge/VIR articles from GDELT (scraped or already in store)",
             )
     except CausaLensError as exc:
         degraded.append(f"Bright Data extraction of GDELT URLs failed: {exc.message}")
         data_mode = "PARTIAL"
 
+    configured_candidates = [item for item in gdelt_candidates if source_for_url(item.url)]
+
     if fetched:
         pool = list(fetched)
-        if len(pool) < 6:
+        if len(pool) < 8 and _allows_demo_seed(query):
             seen = {canonicalize_url(article.url) for article in pool}
             for article in curated:
                 if canonicalize_url(article.url) not in seen:
                     pool.append(article)
+                    seen.add(canonicalize_url(article.url))
+    elif configured_candidates:
+        pool = list(curated)
+        degraded.append(
+            "GDELT routed CNA / The Edge / VIR URLs, but Bright Data did not return extractable article bodies."
+        )
+        data_mode = "PARTIAL"
+    elif gdelt_candidates:
+        pool = list(curated)
+        degraded.append(
+            f"GDELT found {len(gdelt_candidates)} candidates, none on CNA / The Edge / VIR, so Bright Data did not scrape."
+        )
+        data_mode = "PARTIAL"
+    elif curated and _allows_demo_seed(query):
+        pool = list(curated)
+        data_mode = "PARTIAL"
     elif curated:
         pool = list(curated)
-        degraded.append("No freshly scraped GDELT/Bright Data articles; scoring stored corpus against the query.")
         data_mode = "PARTIAL"
     elif _allows_demo_seed(query):
         pool = seed_articles()

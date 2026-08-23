@@ -57,7 +57,9 @@ class Settings(BaseSettings):
     gdelt_ngram_max_probe_minutes: int = 120
     gdelt_ngram_english_only: bool = True
     gdelt_ngram_min_relevance_score: float = 8.0
-    min_brightdata_relevance_score: float = 12.0
+    # Precision is applied after Bright Data on title+body. Keep this at the GDELT
+    # recall floor so configured-domain candidates are not dropped by a second cutoff.
+    min_brightdata_relevance_score: float = 8.0
     gdelt_brightdata_max_urls: int = 8
     llm_timeout_s: float = 90.0
     llm_temperature: float = 0.0

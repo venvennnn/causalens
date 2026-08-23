@@ -114,3 +114,50 @@ def test_debug_graph_quality_classifies_without_gdelt():
         assert body["intent"]["primary_geographies"] == ["Malaysia"]
         assert body["diagnostics"]["candidate_count"] >= 1
         assert "CORE:" in body["text"]
+
+
+def test_fetch_reuses_stored_configured_url_without_scraping():
+    import asyncio
+    from datetime import datetime
+
+    from app.models.db import get_session_factory
+    from app.models.schemas import Article, ArticleCandidate
+    from app.services.analysis import persist_article
+    from app.services.ingest import fetch_configured_articles
+    from app.sources.adapters import article_id_for, canonicalize_url
+
+    class BoomClient:
+        async def run_collector(self, *args, **kwargs):
+            raise AssertionError("Bright Data should not be called for URLs already in store")
+
+    url = "https://www.channelnewsasia.com/business/infineon-kulim-semiconductor-capacity-999001"
+    article = Article(
+        id=article_id_for(url),
+        title="Infineon invests in new Kulim semiconductor capacity",
+        url=url,
+        source="CNA",
+        country="Malaysia",
+        body=(
+            "Infineon will invest in additional semiconductor manufacturing capacity "
+            "at its Kulim, Malaysia facility. " * 12
+        ),
+        ingested_at=datetime.utcnow(),
+    )
+    candidate = ArticleCandidate(
+        id="g1",
+        title=article.title,
+        url=url,
+        source="CNA",
+        country="Malaysia",
+        raw={"provider": "gdelt_ngrams", "relevance_score": 9.5},
+    )
+    with TestClient(app):
+        db = get_session_factory()()
+        try:
+            persist_article(db, article)
+            db.commit()
+            result = asyncio.run(fetch_configured_articles([candidate], db, client=BoomClient()))
+            assert len(result) == 1
+            assert canonicalize_url(result[0].url) == canonicalize_url(url)
+        finally:
+            db.close()
