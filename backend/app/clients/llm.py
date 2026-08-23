@@ -48,11 +48,37 @@ class LLMClient(Protocol):
     async def complete_json(self, system: str, user: str) -> Any: ...
 
 
+DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-20250514"
+
+
+def is_anthropic_key(key: str) -> bool:
+    return (key or "").strip().startswith("sk-ant-")
+
+
+def anthropic_api_key(settings: Any | None = None) -> str:
+    settings = settings or get_settings()
+    if (settings.anthropic_api_key or "").strip():
+        return settings.anthropic_api_key.strip()
+    if is_anthropic_key(settings.openai_api_key):
+        return settings.openai_api_key.strip()
+    return ""
+
+
+def anthropic_model_name(settings: Any | None = None) -> str:
+    settings = settings or get_settings()
+    model = (settings.openai_model or "").strip()
+    if model.lower().startswith("claude"):
+        return model
+    return DEFAULT_CLAUDE_MODEL
+
+
 class OpenAIClient:
     def __init__(self) -> None:
         self.settings = get_settings()
         if not self.settings.openai_api_key:
             raise LLMExtractionError("OPENAI_API_KEY is not configured")
+        if is_anthropic_key(self.settings.openai_api_key):
+            raise LLMExtractionError("OPENAI_API_KEY looks like a Claude key; use the Anthropic client")
 
     async def complete_json(self, system: str, user: str) -> Any:
         from openai import AsyncOpenAI
@@ -74,15 +100,17 @@ class OpenAIClient:
 class AnthropicClient:
     def __init__(self) -> None:
         self.settings = get_settings()
-        if not self.settings.anthropic_api_key:
-            raise LLMExtractionError("ANTHROPIC_API_KEY is not configured")
+        self.api_key = anthropic_api_key(self.settings)
+        if not self.api_key:
+            raise LLMExtractionError("OPENAI_API_KEY is not configured")
+        self.model = anthropic_model_name(self.settings)
 
     async def complete_json(self, system: str, user: str) -> Any:
         from anthropic import AsyncAnthropic
 
-        client = AsyncAnthropic(api_key=self.settings.anthropic_api_key, timeout=self.settings.llm_timeout_s)
+        client = AsyncAnthropic(api_key=self.api_key, timeout=self.settings.llm_timeout_s)
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=self.model,
             max_tokens=8000,
             temperature=self.settings.llm_temperature,
             system=system,
@@ -131,13 +159,16 @@ class GeminiClient:
 def get_llm_client() -> LLMClient:
     settings = get_settings()
     provider = settings.llm_provider
+    # Keep OPENAI_API_KEY / OPENAI_MODEL names, but never send Claude keys to OpenAI.
+    if is_anthropic_key(settings.openai_api_key) or (provider == "anthropic" and anthropic_api_key(settings)):
+        return AnthropicClient()
     if provider == "anthropic":
         return AnthropicClient()
     if provider == "gemini":
         return GeminiClient()
     if settings.openai_api_key:
         return OpenAIClient()
-    if settings.anthropic_api_key:
+    if anthropic_api_key(settings):
         return AnthropicClient()
     if settings.gemini_api_key:
         return GeminiClient()
