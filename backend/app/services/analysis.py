@@ -35,6 +35,7 @@ from app.services.graph_quality import (
 from app.services.query_intent import parse_query_intent
 from app.services.ingest import (
     fetch_configured_articles,
+    fetch_open_web_articles,
     get_articles_by_ids,
     load_recent_articles,
 )
@@ -431,6 +432,24 @@ async def run_analysis(db: Session, query: str) -> GraphPayload:
         degraded.append(f"Bright Data extraction of GDELT URLs failed: {exc.message}")
         data_mode = "PARTIAL"
 
+    try:
+        web_articles = await fetch_open_web_articles(
+            gdelt_candidates,
+            db,
+            exclude_urls={canonicalize_url(article.url) for article in fetched},
+        )
+        if web_articles:
+            log_pipeline_event(
+                db,
+                "gdelt",
+                "web_extract_ok",
+                f"Extracted {len(web_articles)} off-domain GDELT articles for relevance validation",
+            )
+            fetched = [*fetched, *web_articles]
+    except CausaLensError as exc:
+        degraded.append(f"GDELT article extraction failed: {exc.message}")
+        data_mode = "PARTIAL"
+
     configured_candidates = [item for item in gdelt_candidates if source_for_url(item.url)]
 
     if fetched:
@@ -450,7 +469,7 @@ async def run_analysis(db: Session, query: str) -> GraphPayload:
     elif gdelt_candidates:
         pool = list(curated)
         degraded.append(
-            f"GDELT found {len(gdelt_candidates)} candidates, none on CNA / The Edge / VIR, so Bright Data did not scrape."
+            f"GDELT found {len(gdelt_candidates)} candidates, but article extraction could not recover usable bodies."
         )
         data_mode = "PARTIAL"
     elif curated and _allows_demo_seed(query):

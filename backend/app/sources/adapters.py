@@ -267,3 +267,28 @@ def normalize_article(
         ingested_at=datetime.utcnow(),
         raw=record,
     )
+
+
+def article_from_web_extract(
+    candidate: ArticleCandidate,
+    *,
+    title: str,
+    body: str,
+) -> Article:
+    host = (urlparse(candidate.url).hostname or candidate.source or "web").removeprefix("www.")
+    return Article(
+        id=article_id_for(candidate.url),
+        title=(title or candidate.title or candidate.url).strip(),
+        url=canonicalize_url(candidate.url),
+        source=host,
+        country=candidate.country or "Unknown",
+        language="en",
+        published_at=candidate.published_at,
+        author=None,
+        category=list(candidate.category or ["GDELT"]),
+        summary=candidate.summary or (title or candidate.title)[:240],
+        body=_clean_text(body),
+        image_url=candidate.image_url,
+        ingested_at=datetime.utcnow(),
+        raw={**(candidate.raw or {}), "provider": "gdelt_web_extract"},
+    )
