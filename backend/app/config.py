@@ -43,7 +43,22 @@ class Settings(BaseSettings):
     article_concurrency: int = 3
     max_articles_per_source: int = 5
     gdelt_max_records: int = 30
-    gdelt_timeout_s: float = 20.0
+    gdelt_timeout_s: float = 90.0
+    # Primary discovery is Web NGrams + TOC. "doc" keeps the old DOC 2.0 API.
+    gdelt_discovery_mode: Literal["ngrams", "doc"] = "ngrams"
+    gdelt_doc_fallback: bool = False
+    gdelt_ngram_base_url: str = (
+        "https://storage.googleapis.com/data.gdeltproject.org/gdeltv5/weblegacy/ngrams"
+    )
+    gdelt_cache_dir: str = "./data/gdelt"
+    gdelt_ngram_lookback_hours: int = 6
+    gdelt_ngram_lag_minutes: int = 5
+    gdelt_ngram_max_snapshots: int = 3
+    gdelt_ngram_max_probe_minutes: int = 120
+    gdelt_ngram_english_only: bool = True
+    gdelt_ngram_min_relevance_score: float = 8.0
+    min_brightdata_relevance_score: float = 12.0
+    gdelt_brightdata_max_urls: int = 8
     llm_timeout_s: float = 90.0
     llm_temperature: float = 0.0
 

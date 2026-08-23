@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.exceptions import CausaLensError
+from app.gdelt.pipeline import discover_ngrams, gdelt_discovery_status, serialize_ranked
 from app.models.db import get_db
 from app.models.schemas import AnalyzeRequest, HealingEventRequest, RefreshResponse
 from app.services.analysis import (
@@ -118,13 +119,34 @@ def ripple(event_id: str, analysis_id: str, db: Session = Depends(get_db)) -> di
 @router.get("/pipeline/status")
 def pipeline_status(db: Session = Depends(get_db)) -> dict:
     sources = [item.model_dump(mode="json") for item in list_pipeline_status(db)]
-    gdelt = {
-        "source": "gdelt",
-        "display_name": "GDELT",
-        "health": "HEALTHY",
-        "discovery_status": "live",
+    return {"sources": sources, "gdelt": gdelt_discovery_status(db)}
+
+
+@router.get("/debug/gdelt-discovery")
+async def debug_gdelt_discovery(
+    query: str = Query(default="AI infrastructure in Southeast Asia", min_length=3, max_length=240),
+    max_snapshots: int = Query(default=1, ge=1, le=8),
+    min_score: float | None = Query(default=None),
+    force: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Rank GDELT NGram candidates without calling Bright Data."""
+    result = await discover_ngrams(
+        query,
+        db=db,
+        max_snapshots=max_snapshots,
+        min_score=min_score,
+        force_rescan=force,
+    )
+    top = result.ranked[:25]
+    return {
+        "topic": result.topic,
+        "snapshots": result.snapshots,
+        "stats": [item.as_dict() for item in result.stats],
+        "candidate_count": len(result.ranked),
+        "candidates": serialize_ranked(top),
+        "brightdata": False,
     }
-    return {"sources": sources, "gdelt": gdelt}
 
 
 @router.get("/pipeline/events")

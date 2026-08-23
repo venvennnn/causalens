@@ -24,7 +24,11 @@ from app.services.dedupe import merge_article_streams
 from app.services.demo_seed import DEMO_QUERIES, edges_for_events, events_for_query, seed_articles, seed_edges, seed_events
 from app.services.event_extractor import extract_events
 from app.services.graph_service import build_graph, get_path, get_regional_ripple, get_what_next, get_why
-from app.services.ingest import article_from_row, get_articles_by_ids, load_recent_articles
+from app.services.ingest import (
+    fetch_configured_articles,
+    get_articles_by_ids,
+    load_recent_articles,
+)
 from app.services.pipeline import log_pipeline_event
 from app.sources.adapters import canonicalize_url
 from app.sources.registry import source_for_url
@@ -294,11 +298,17 @@ async def run_analysis(db: Session, query: str) -> GraphPayload:
     data_mode: DataMode = "LIVE"
     gdelt_candidates = []
     try:
-        gdelt_candidates = await GDELTClient().search_gdelt(query, settings.gdelt_max_records)
-        log_pipeline_event(db, "gdelt", "search_ok", f"GDELT returned {len(gdelt_candidates)} documents")
+        gdelt_candidates = await GDELTClient().search_gdelt(query, settings.gdelt_max_records, db=db)
+        log_pipeline_event(
+            db,
+            "gdelt",
+            "search_ok",
+            f"GDELT NGrams returned {len(gdelt_candidates)} ranked candidates",
+        )
     except (GDELTUnavailable, CausaLensError) as exc:
         degraded.append(f"GDELT unavailable: {exc.message}")
         log_pipeline_event(db, "gdelt", "search_failed", exc.message)
+        data_mode = "PARTIAL"
 
     curated = load_recent_articles(db, limit=40)
     if not curated:
@@ -308,15 +318,35 @@ async def run_analysis(db: Session, query: str) -> GraphPayload:
         degraded.append("No live Bright Data articles in store; mixed in curated corpus.")
         data_mode = "PARTIAL"
 
+    fetched: list = []
+    try:
+        fetched = await fetch_configured_articles(gdelt_candidates, db)
+        if fetched:
+            log_pipeline_event(
+                db,
+                "gdelt",
+                "brightdata_ok",
+                f"Fetched {len(fetched)} configured-domain articles from GDELT candidates",
+            )
+            seen_urls = {canonicalize_url(article.url) for article in fetched}
+            curated = [*fetched, *[item for item in curated if canonicalize_url(item.url) not in seen_urls]]
+    except CausaLensError as exc:
+        degraded.append(f"Bright Data extraction of GDELT URLs failed: {exc.message}")
+        data_mode = "PARTIAL"
+
     curated, extra = merge_article_streams(curated, gdelt_candidates)
-    # Route GDELT hits for configured domains through existing articles only; do not scrape unsupported sites.
-    routed = 0
-    for candidate in extra:
-        if source_for_url(candidate.url):
-            routed += 1
+    routed = sum(1 for candidate in extra if source_for_url(candidate.url))
     articles = curated[:24]
-    if routed:
-        log.info("gdelt_routed_to_collectors", extra={"source": "gdelt", "article_count": routed, "success": True})
+    if routed or fetched:
+        log.info(
+            "gdelt_routed_to_collectors",
+            extra={
+                "source": "gdelt",
+                "article_count": len(fetched),
+                "unfetched_configured": routed,
+                "success": True,
+            },
+        )
 
     events: list[Event] = []
     edges: list[CausalEdge] = []
@@ -350,7 +380,7 @@ async def run_analysis(db: Session, query: str) -> GraphPayload:
         events = seed_events_
         edges = seed_edges_
         articles = merged_articles
-        data_mode = "CACHED" if "GDELT unavailable" in " ".join(degraded) or not llm_available() else "PARTIAL"
+        data_mode = "CACHED" if not llm_available() else "PARTIAL"
         if not any("cached" in item.lower() or "fallback" in item.lower() for item in degraded):
             degraded.append("Serving evidence-backed cached analysis after live extraction limits.")
 

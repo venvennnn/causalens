@@ -33,37 +33,38 @@ Capital, manufacturing, power and policy now couple Singapore, Malaysia, Vietnam
 ## Architecture
 
 ```text
-                       ┌──────────────┐
-                       │    GDELT     │
-                       │ broad search │
-                       └──────┬───────┘
-                              │
-      ┌───────────────────────┼────────────────────────┐
-      ▼                       ▼                        ▼
-CNA Discovery           Edge Discovery           VIR Discovery
-Bright Data             Bright Data              Bright Data
-      │                       │                        │
-      ▼                       ▼                        ▼
-CNA Article             Edge Article              VIR Article
-Bright Data             Bright Data              Bright Data
-      │                       │                        │
-      └───────────────────────┼────────────────────────┘
-                              ▼
-                     Normalized Articles
-                              │
-                              ▼
-                       Deduplication
-                              │
-                              ▼
-                      Event Extraction
-                              │
-                              ▼
-                     Causal Extraction
-                              │
-                              ▼
-                     Directed Event Graph
-                    ↙          ↓          ↘
-                  WHY?     WHAT NEXT?    RIPPLE
+                       ┌──────────────────────┐
+                       │  GDELT Web NGrams    │
+                       │  + snapshot TOC      │
+                       └──────────┬───────────┘
+                                  │ concept match → DOCID aggregate
+                                  │ relevance filter / dedupe
+                                  ▼
+                    High-quality article candidates
+                                  │
+      ┌───────────────────────────┼───────────────────────────┐
+      ▼                           ▼                           ▼
+CNA article collector     Edge article collector      VIR article collector
+Bright Data               Bright Data                 Bright Data
+(only configured domains above MIN_BRIGHTDATA_RELEVANCE_SCORE)
+      │                           │                           │
+      └───────────────────────────┼───────────────────────────┘
+                                  ▼
+                         Normalized Articles
+                                  │
+                                  ▼
+                           Deduplication
+                                  │
+                                  ▼
+                          Event Extraction
+                                  │
+                                  ▼
+                         Causal Extraction
+                                  │
+                                  ▼
+                         Directed Event Graph
+                        ↙          ↓          ↘
+                      WHY?     WHAT NEXT?    RIPPLE
 ```
 
 - **Frontend:** Next.js, TypeScript, Tailwind CSS, React Flow, dagre
@@ -105,9 +106,25 @@ Source-specific adapters normalise the observed collector schemas (CNA `product_
 
 ## GDELT integration
 
-GDELT DOC 2.0 (`ArtList`) is the **broad** discovery layer. It does not replace Bright Data.
+GDELT **Web NGrams + TOC** is the default broad discovery layer. It does not replace Bright Data.
 
-If a GDELT hit belongs to CNA, The Edge or VIR, CausaLens routes it to the matching Bright Data **article** collector. External domains stay as metadata-only context. The app does not bypass paywalls or scrape unsupported sites.
+Each snapshot is a pair of files under `https://storage.googleapis.com/data.gdeltproject.org/gdeltv5/weblegacy/ngrams/`:
+
+- `{YYYYMMDDHHMM00}.ngrams.txt.gz` — `DOCID<TAB>QUADGRAM<TAB>COUNT`
+- `{YYYYMMDDHHMM00}.toc.json.gz` — JSONL mapping snapshot-local DOCIDs to URL / title / date / language
+
+The worker looks a few minutes behind UTC, treats HTTP 404 as a normal missing minute, streams ngram rows, and only keeps articles that match **technology AND Southeast Asia geography**. Entities such as Nvidia boost the score but never qualify an article by themselves. Index/category pages and known aggregators are rejected or heavily penalized. Only candidates above `MIN_BRIGHTDATA_RELEVANCE_SCORE` on CNA / The Edge / VIR are sent to Bright Data article collectors.
+
+The old GDELT DOC 2.0 `ArtList` API is **not** the default. Set `GDELT_DISCOVERY_MODE=doc` or `GDELT_DOC_FALLBACK=true` if you need it.
+
+Debug discovery without consuming Bright Data credits:
+
+```bash
+cd backend
+python scripts/test_gdelt_ngrams.py --query "AI infrastructure in Southeast Asia"
+# or
+curl "http://localhost:8000/debug/gdelt-discovery?query=AI%20infrastructure%20in%20Southeast%20Asia"
+```
 
 ## Evidence-backed causality
 
@@ -186,6 +203,13 @@ python scripts/test_brightdata.py
 ```
 
 If all three sources pass, the script prints `BRIGHT DATA PIPELINE HEALTHY`.
+
+GDELT NGrams discovery (no Bright Data):
+
+```bash
+cd backend
+python scripts/test_gdelt_ngrams.py
+```
 
 ### Running frontend
 
