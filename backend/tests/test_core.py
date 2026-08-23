@@ -6,14 +6,24 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from datetime import datetime
+from types import SimpleNamespace
+from unittest.mock import patch
+
 from app.clients.brightdata import as_record_list, extract_json_payload
+from app.clients.llm import (
+    AnthropicClient,
+    anthropic_api_key,
+    anthropic_model_name,
+    get_llm_client,
+    is_anthropic_key,
+)
+from app.models.schemas import Article, CausalEdge, Event
 from app.services.dedupe import titles_similar
 from app.services.evidence import annotate_cross_border, calculate_evidence_score
 from app.services.graph_service import build_graph, get_regional_ripple, get_what_next, get_why
 from app.services.health import validate_article
 from app.sources.adapters import canonicalize_url, normalize_article, normalize_discovery, strip_cna_promos, strip_edge_uploader
-from app.models.schemas import Article, CausalEdge, Event
-from datetime import datetime
 
 
 def test_cna_prefers_product_page_url():
@@ -83,6 +93,35 @@ def test_json_payload_with_logs():
     stdout = "running collector...\nprogress 50%\n[{\"title\": \"A\", \"article_url\": \"https://x.com/a\"}]\n"
     payload = extract_json_payload(stdout)
     assert as_record_list(payload)[0]["title"] == "A"
+
+
+def test_openai_env_claude_key_routes_to_anthropic():
+    assert is_anthropic_key("sk-ant-api03-abc")
+    assert not is_anthropic_key("sk-proj-abc")
+    settings = SimpleNamespace(
+        openai_api_key="sk-ant-api03-abc",
+        openai_model="gpt-5-mini",
+        anthropic_api_key="",
+    )
+    assert anthropic_api_key(settings) == "sk-ant-api03-abc"
+    assert anthropic_model_name(settings) == "claude-sonnet-4-20250514"
+    settings.openai_model = "claude-sonnet-4-20250514"
+    assert anthropic_model_name(settings) == "claude-sonnet-4-20250514"
+
+    fake = SimpleNamespace(
+        llm_provider="openai",
+        openai_api_key="sk-ant-api03-test",
+        openai_model="gpt-5-mini",
+        anthropic_api_key="",
+        gemini_api_key="",
+        llm_timeout_s=90.0,
+        llm_temperature=0.0,
+    )
+    with patch("app.clients.llm.get_settings", return_value=fake):
+        client = get_llm_client()
+    assert isinstance(client, AnthropicClient)
+    assert client.api_key == "sk-ant-api03-test"
+    assert client.model == "claude-sonnet-4-20250514"
 
 
 def test_validate_article_length():

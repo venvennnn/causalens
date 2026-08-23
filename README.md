@@ -175,7 +175,7 @@ See `.env.example`. Required for a fully live run:
 
 | Variable | Purpose |
 | --- | --- |
-| `OPENAI_API_KEY` (or Anthropic / Gemini) | Event + causal extraction |
+| `OPENAI_API_KEY` | Event + causal extraction. Claude keys (`sk-ant-...`) are routed to Anthropic; keep this variable name. |
 | `BRIGHTDATA_API_TOKEN` | HTTP transport and CLI auth |
 | `BRIGHTDATA_TRANSPORT` | `cli` (default) or `http` |
 | `USE_CACHED_DEMO_ON_FAILURE` | `true` — never crash a live demo |
