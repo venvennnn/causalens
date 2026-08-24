@@ -10,7 +10,7 @@ from datetime import datetime
 
 from app.models.schemas import Article, CausalEdge, Event
 from app.services.event_dedup import dedupe_events
-from app.services.graph_quality import assemble_events, classify_articles, finalize_edges
+from app.services.graph_quality import assemble_events, build_diagnostics, classify_articles, finalize_edges
 from app.services.query_intent import parse_query_intent
 from app.services.relations import apply_relation_policy
 from app.services.relevance import classify_text
@@ -74,6 +74,37 @@ def test_infineon_kulim_is_core():
     assert result.core_eligible
     assert result.subject_relevance >= 0.6
     assert result.geography_relevance >= 0.6
+
+
+def test_infineon_kulim_without_semiconductor_word_is_core():
+    intent = parse_query_intent(QUERY)
+    result = classify_text(
+        intent,
+        "Infineon expands Kulim plant",
+        "Infineon will expand its Kulim, Malaysia plant and hire more engineers this year.",
+    )
+    assert result.classification == "CORE"
+    assert result.core_eligible
+
+
+def test_chipmakers_penang_is_core():
+    intent = parse_query_intent(QUERY)
+    result = classify_text(
+        intent,
+        "Malaysia chipmakers expand in Penang",
+        "Chipmakers in Penang are adding assembly and test lines this quarter.",
+    )
+    assert result.classification == "CORE"
+
+
+def test_phrase_chip_matches_chipmakers_not_intelligence():
+    from app.gdelt.topics import normalize_text
+    from app.services.query_intent import phrase_in_text
+
+    assert phrase_in_text("chip", normalize_text("Malaysia chipmakers expand"))
+    assert phrase_in_text("chip", normalize_text("new chips and wafers"))
+    assert not phrase_in_text("intel", normalize_text("market intelligence report"))
+    assert phrase_in_text("intel", normalize_text("Intel expands Penang"))
 
 
 def test_vietnam_semiconductor_is_not_core():
@@ -281,6 +312,50 @@ def test_core_first_graph_drops_unrelated_context():
     assert any("Infineon" in title for title in titles)
     assert not any("Nvidia" in title for title in titles)
     assert not any("Microsoft" in title for title in titles)
+
+
+def test_core_article_stub_is_not_demoted():
+    intent = parse_query_intent(QUERY)
+    article = _article(
+        "Infineon expands Kulim plant",
+        "Infineon will expand its Kulim, Malaysia plant and hire more engineers this year.",
+        url="https://example.com/infineon-stub",
+    )
+    article.id = "art1"
+    classified = classify_articles(intent, [article])
+    assert classified[0].result.classification == "CORE"
+    stubs = [
+        _event(
+            "e1",
+            article.title,
+            article.title,
+            source_article_ids=["art1"],
+            companies=["Infineon"],
+        )
+    ]
+    core, _context = assemble_events(intent, stubs, [article], classified)
+    assert any("Infineon" in event.title for event in core)
+
+
+def test_empty_core_is_a_diagnostic_warning_not_topic_fill():
+    intent = parse_query_intent(QUERY)
+    articles = [
+        _article(
+            "Nvidia launches new gaming GPU",
+            "Nvidia launched a new GeForce gaming GPU with DLSS for consumers.",
+            url="https://example.com/nvidia",
+        )
+    ]
+    articles[0].id = "art1"
+    classified = classify_articles(intent, articles)
+    events = [
+        _event("noise1", articles[0].title, articles[0].body, source_article_ids=["art1"], countries=["United States"])
+    ]
+    core, context = assemble_events(intent, events, articles, classified)
+    diagnostics = build_diagnostics(intent, classified, core + context, [])
+    assert diagnostics.core_count == 0
+    assert diagnostics.context_count == 0
+    assert any("sparse" in warning.lower() or "no core" in warning.lower() for warning in diagnostics.warnings)
 
 
 def test_html_article_extract_reads_title_and_paragraphs():

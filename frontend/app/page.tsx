@@ -197,6 +197,9 @@ CORE: ${payload.diagnostics.core_count}
 CONTEXT: ${payload.diagnostics.context_count}
 REJECTED: ${payload.diagnostics.rejected_count}
 
+Warnings:
+${(payload.diagnostics.warnings || []).map((item) => `- ${item}`).join("\n") || "- (none)"}
+
 Rejected:
 ${(payload.diagnostics.rejected || [])
   .slice(0, 8)

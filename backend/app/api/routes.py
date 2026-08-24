@@ -128,7 +128,7 @@ def pipeline_status(db: Session = Depends(get_db)) -> dict:
 @router.get("/debug/gdelt-discovery")
 async def debug_gdelt_discovery(
     query: str = Query(default="AI infrastructure in Southeast Asia", min_length=3, max_length=240),
-    max_snapshots: int = Query(default=1, ge=1, le=8),
+    max_snapshots: int = Query(default=1, ge=1, le=12),
     min_score: float | None = Query(default=None),
     force: bool = Query(default=False),
     db: Session = Depends(get_db),

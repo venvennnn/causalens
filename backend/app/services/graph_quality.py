@@ -3,12 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.config import get_settings
+from app.gdelt.topics import normalize_text
 from app.logging import log
 from app.models.schemas import Article, CausalEdge, Event, GraphDiagnostics, RejectedCandidate
 from app.services.event_dedup import dedupe_events
 from app.services.query_intent import QueryIntent
 from app.services.relations import apply_relation_policy
-from app.services.relevance import RelevanceResult, classify_article, classify_event
+from app.services.relevance import (
+    BOILERPLATE_TITLE_MARKERS,
+    WEAK_NOISE_TITLES,
+    RelevanceResult,
+    classify_article,
+    classify_event,
+)
 
 STRONG_CAUSAL = {"CAUSES", "TRIGGERS", "CONTRIBUTES_TO", "ENABLES", "CONSTRAINS"}
 
@@ -73,6 +80,13 @@ def classify_articles(intent: QueryIntent, articles: list[Article]) -> list[Clas
     return [ClassifiedArticle(article=article, result=classify_article(intent, article)) for article in articles]
 
 
+def _event_title_is_noise(title: str) -> bool:
+    title_n = normalize_text(title)
+    return any(marker in title_n for marker in BOILERPLATE_TITLE_MARKERS) or any(
+        marker in title_n for marker in WEAK_NOISE_TITLES
+    )
+
+
 def annotate_events(
     intent: QueryIntent,
     events: list[Event],
@@ -81,26 +95,23 @@ def annotate_events(
 ) -> list[Event]:
     annotated: list[Event] = []
     for event in events:
+        if _event_title_is_noise(event.title):
+            continue
         source_labels = [
             article_class[article_id].classification
             for article_id in event.source_article_ids
             if article_id in article_class
         ]
         result = classify_event(intent, event, articles)
-        if result.classification == "CORE" or "CORE" in source_labels and result.core_eligible:
+        article_is_core = "CORE" in source_labels
+        # Keep events from CORE articles as CORE. Do not demote stubs whose
+        # short titles omit a lexicon word that the source article already passed.
+        if article_is_core or result.classification == "CORE" or result.core_eligible:
             event.relevance_class = "CORE"
-        elif result.classification == "CONTEXT" or "CONTEXT" in source_labels:
+        elif result.classification == "CONTEXT" or "CONTEXT" in source_labels or result.context_eligible:
             event.relevance_class = "CONTEXT"
         else:
-            event.relevance_class = "CONTEXT" if result.context_eligible else None
-            if event.relevance_class is None:
-                continue
-        if event.relevance_class == "CORE" and result.classification == "REJECTED":
-            # Event text failed gates even if a noisy source was tagged CORE.
-            if not result.core_eligible:
-                event.relevance_class = "CONTEXT" if result.context_eligible else None
-                if event.relevance_class is None:
-                    continue
+            continue
         event.relevance_score = result.overall_relevance
         event.relevance_breakdown = result.breakdown()
         event.relevance_reason = result.reason
@@ -210,6 +221,21 @@ def build_diagnostics(
     context_events = [event for event in events if event.relevance_class == "CONTEXT"]
     metrics = graph_metrics(events, edges, len(rejected))
     warnings: list[str] = []
+    if metrics["core_node_count"] == 0:
+        warnings.append(
+            "No CORE events for this query; the graph is left sparse instead of filling with topic drift."
+        )
+        log.info(
+            "graph_quality_warning",
+            extra={
+                "source": "graph",
+                "success": True,
+                "warning": "no_core_events",
+                "core_node_count": 0,
+                "context_node_count": metrics["context_node_count"],
+                "rejected_candidate_count": len(rejected),
+            },
+        )
     if metrics["context_node_count"] > metrics["core_node_count"]:
         warnings.append("context nodes > core nodes")
         log.info(

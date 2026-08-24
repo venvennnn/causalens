@@ -211,6 +211,21 @@ def test_candidate_stamps_newest_first():
     assert len(stamps) == 8
 
 
+def test_candidate_stamps_respects_stride():
+    now = datetime(2026, 8, 23, 16, 10, tzinfo=timezone.utc)
+    stamps = candidate_stamps(now=now, lag_minutes=5, lookback_hours=1, max_probes=8, stride_minutes=15)
+    assert stamps[0] == snapshot_stamp(datetime(2026, 8, 23, 16, 5, tzinfo=timezone.utc))
+    assert stamps[1] == snapshot_stamp(datetime(2026, 8, 23, 15, 50, tzinfo=timezone.utc))
+    assert len(stamps) == 5
+
+
+def test_semiconductor_topic_includes_kulim_geo():
+    semi = topic_from_query("Semiconductor investment in Malaysia")
+    assert "kulim" in semi.concept_groups["geography"]
+    assert "penang" in semi.concept_groups["geography"]
+    assert "infineon" in semi.concept_groups["technology"]
+
+
 def test_topic_config_is_reusable():
     ev = topic_from_query("EV battery investments in Southeast Asia")
     assert "ev battery" in ev.concept_groups["technology"]

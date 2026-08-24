@@ -208,13 +208,18 @@ DOMAIN_PACKS: tuple[DomainPack, ...] = (
             "semiconductor",
             "semiconductors",
             "chip manufacturing",
+            "chip making",
             "chipmaker",
             "chipmakers",
+            "chipmaking",
             "wafer",
+            "wafers",
             "wafer fabrication",
             "wafer fab",
             "foundry",
+            "foundries",
             "osat",
+            "osats",
             "integrated circuit",
             "ic manufacturing",
             "ic packaging",
@@ -227,8 +232,32 @@ DOMAIN_PACKS: tuple[DomainPack, ...] = (
             "chip packaging",
             "fab expansion",
             "fab",
+            "fabs",
+            "fabrication",
             "chip",
             "chips",
+            # SEA / global chip producers: company + primary geo is enough for CORE.
+            "intel",
+            "infineon",
+            "micron",
+            "tsmc",
+            "amkor",
+            "ase",
+            "unisem",
+            "inari",
+            "silterra",
+            "x-fab",
+            "xfab",
+            "globalfoundries",
+            "global foundries",
+            "stmicroelectronics",
+            "stmicro",
+            "nxp",
+            "texas instruments",
+            "umc",
+            "asml",
+            "on semiconductor",
+            "onsemi",
         ),
         supporting=("investment", "fdi", "capacity", "expansion", "facility", "factory", "plant"),
         weak=("ai", "gpu", "nvidia", "electronics", "cloud", "data center", "data centre", "server", "technology"),
@@ -355,6 +384,21 @@ def _padded(text: str) -> str:
     return f" {normalize_text(text)} "
 
 
+# Morphological endings only. Do not prefix-match intel→intelligence.
+_MORPH_SUFFIXES = {
+    "s",
+    "es",
+    "er",
+    "ers",
+    "ed",
+    "ing",
+    "ment",
+    "maker",
+    "makers",
+    "making",
+}
+
+
 def phrase_in_text(phrase: str, text_n: str) -> bool:
     needle = normalize_text(phrase)
     if not needle:
@@ -363,8 +407,13 @@ def phrase_in_text(phrase: str, text_n: str) -> bool:
     padded_needle = f" {needle} "
     if padded_needle in haystack:
         return True
-    if " " not in needle and len(needle) <= 3:
-        return padded_needle in haystack
+    if " " in needle or len(needle) <= 3:
+        return False
+    for token in haystack.split():
+        if token == needle:
+            return True
+        if token.startswith(needle) and token[len(needle) :] in _MORPH_SUFFIXES:
+            return True
     return False
 
 

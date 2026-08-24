@@ -299,6 +299,7 @@ async def discover_ngrams(
         lag_minutes=settings.gdelt_ngram_lag_minutes,
         lookback_hours=settings.gdelt_ngram_lookback_hours,
         max_probes=settings.gdelt_ngram_max_probe_minutes,
+        stride_minutes=settings.gdelt_ngram_snapshot_stride_minutes,
     )
     limit = max_snapshots or settings.gdelt_ngram_max_snapshots
     min_score = settings.gdelt_ngram_min_relevance_score if min_score is None else min_score

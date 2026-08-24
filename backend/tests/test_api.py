@@ -206,6 +206,7 @@ def test_analyze_extracts_off_domain_gdelt_candidates():
             reasons = " ".join(payload.get("degraded_reasons") or [])
             assert "none on CNA" not in reasons
             assert "could not recover usable bodies" not in reasons
+            assert "No CORE events for this query" not in reasons
             mock_web.assert_awaited()
             titles = " ".join(event["title"] for event in payload["events"])
             assert "Infineon" in titles or payload["diagnostics"]["core_count"] >= 1

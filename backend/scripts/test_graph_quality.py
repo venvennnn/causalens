@@ -45,6 +45,11 @@ def main() -> None:
             "https://example.com/infineon-kulim",
         ),
         article(
+            "Infineon expands Kulim plant",
+            "Infineon will expand its Kulim, Malaysia plant and hire more engineers this year.",
+            "https://example.com/infineon-plant",
+        ),
+        article(
             "Intel expands advanced packaging capacity in Penang",
             "Intel is expanding advanced packaging and semiconductor assembly capacity in Penang, Malaysia.",
             "https://example.com/intel-penang",
